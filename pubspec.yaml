@@ -1,5 +1,5 @@
-name: mantra
-description: Offline mantra chanting counter with Porcupine keyword detection.
+name: mantra_counter
+description: Offline mantra chanting counter. On-device KWS with TFLite.
 
 publish_to: 'none'
 
@@ -13,17 +13,24 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^2.5.1
   riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  go_router: ^13.2.4
   drift: ^2.18.0
   sqlite3_flutter_libs: ^0.5.24
-  path_provider: ^2.1.3
+  path_provider: ^2.1.4
   path: ^1.9.0
+  tflite_flutter: ^0.10.4
+  flutter_background_service: ^5.0.5
   flutter_local_notifications: ^17.2.3
   timezone: ^0.9.4
   permission_handler: ^11.3.1
-  flutter_background_service: ^5.0.5
-  shared_preferences: ^2.3.0
-  device_info_plus: ^10.1.2
-  porcupine_flutter: ^3.0.0
+  supabase_flutter: ^2.5.4
+  connectivity_plus: ^6.0.3
+  shared_preferences: ^2.2.3
+  workmanager: ^0.5.2
+  http: ^1.2.2
+  crypto: ^3.0.3
+  uuid: ^4.3.3
 
 dev_dependencies:
   flutter_test:
@@ -31,6 +38,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   drift_dev: ^2.18.0
   build_runner: ^2.4.12
+  riverpod_generator: ^2.4.3
 
 flutter:
   uses-material-design: true

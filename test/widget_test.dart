@@ -8,15 +8,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:mantra/main.dart';
+import 'package:mantra_counter/main.dart';
 
 void main() {
-  testWidgets('Dashboard screen renders', (WidgetTester tester) async {
+  testWidgets('App renders', (WidgetTester tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: MantraApp()),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    expect(find.text('Mantra Dashboard'), findsOneWidget);
+    expect(find.text('Mantra Counter'), findsOneWidget);
   });
 }

@@ -1,31 +1,84 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'data/local/database.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:workmanager/workmanager.dart';
 
-/// Global database provider - single instance for the entire app lifecycle.
-final databaseProvider = Provider<AppDatabase>((ref) {
-  final db = AppDatabase();
-  ref.onDispose(() => db.close());
-  return db;
-});
+import 'core/env.dart';
+import 'core/router.dart';
+import 'data/local/database.dart';
+import 'data/remote/sync_service.dart';
+import 'notifications/notification_service.dart';
+
+// ──────────────────────────────────────────────
+// Workmanager background callback
+// ──────────────────────────────────────────────
+
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((taskName, inputData) async {
+    if (taskName == 'syncPendingSessions') {
+      final db = AppDatabase();
+      final sync = SyncService(db);
+      await sync.tryProcessQueue();
+      await db.close();
+    }
+    return true;
+  });
+}
+
+// ──────────────────────────────────────────────
+// Entry point
+// ──────────────────────────────────────────────
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(
-    ProviderScope(
-      child: const MantraApp(),
-    ),
+
+  // Supabase init
+  await Supabase.initialize(
+    url: Env.supabaseUrl,
+    anonKey: Env.supabaseAnonKey,
   );
+
+  // Notifications init
+  await NotificationService.init();
+
+  // Workmanager init (background sync)
+  Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+  Workmanager().registerPeriodicTask(
+    'mantra-sync',
+    'syncPendingSessions',
+    frequency: const Duration(minutes: 15),
+    constraints: Constraints(networkType: NetworkType.connected),
+  );
+
+  // Clean up orphaned sessions from potential crashes
+  final db = AppDatabase();
+  final orphaned = await db.getOrphanedSessions();
+  for (final s in orphaned) {
+    final lastDetection = await db.getLastDetectionForSession(s.id);
+    await db.markSessionEnded(
+      s.id,
+      lastDetection?.detectedAt ?? s.startedAt,
+      s.achievedCount,
+    );
+  }
+
+  runApp(const ProviderScope(child: MantraApp()));
 }
+
+// ──────────────────────────────────────────────
+// Root widget
+// ──────────────────────────────────────────────
 
 class MantraApp extends ConsumerWidget {
   const MantraApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'Mantra Counter',
       debugShowCheckedModeBanner: false,
+      routerConfig: appRouter,
       theme: ThemeData(
         colorSchemeSeed: Colors.deepPurple,
         useMaterial3: true,
@@ -35,76 +88,6 @@ class MantraApp extends ConsumerWidget {
         colorSchemeSeed: Colors.deepPurple,
         useMaterial3: true,
         brightness: Brightness.dark,
-      ),
-      home: const DashboardScreen(),
-    );
-  }
-}
-
-class DashboardScreen extends ConsumerStatefulWidget {
-  const DashboardScreen({super.key});
-
-  @override
-  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
-}
-
-class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  late final AppDatabase _db;
-
-  @override
-  void initState() {
-    super.initState();
-    _db = ref.read(databaseProvider);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mantra Dashboard'),
-        centerTitle: true,
-      ),
-      body: StreamBuilder<List<MantraConfigTableData>>(
-        stream: _db.watchAllMantras(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final mantras = snapshot.data ?? [];
-          if (mantras.isEmpty) {
-            return const Center(child: Text('No mantras configured.'));
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: mantras.length,
-            itemBuilder: (context, index) {
-              final mantra = mantras[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text('${mantra.targetCount}'),
-                  ),
-                  title: Text(mantra.name),
-                  subtitle: Text(mantra.devanagari),
-                  trailing: const Icon(Icons.play_arrow_rounded),
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Start ${mantra.name} session')),
-                    );
-                  },
-                ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // TODO: Navigate to add/configure mantra screen
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Add Mantra'),
       ),
     );
   }

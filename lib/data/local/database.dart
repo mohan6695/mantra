@@ -6,36 +6,87 @@ import 'package:path/path.dart' as p;
 
 part 'database.g.dart';
 
+// ──────────────────────────────────────────────
+// Table definitions
+// ──────────────────────────────────────────────
+
 class MantraConfigTable extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get name => text()();
   TextColumn get devanagari => text()();
   TextColumn get romanized => text()();
-  IntColumn get targetCount => integer()();
-  RealColumn get sensitivity => real().withDefault(const Constant(0.6))();
-  IntColumn get refractoryMs => integer().withDefault(const Constant(800))();
+  IntColumn get targetCount => integer().withDefault(const Constant(108))();
+  RealColumn get sensitivity =>
+      real().withDefault(const Constant(0.82))();
+  IntColumn get refractoryMs =>
+      integer().withDefault(const Constant(800))();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 }
 
 class SessionsTable extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  TextColumn get id => text()(); // UUID
   IntColumn get mantraId => integer().references(MantraConfigTable, #id)();
   DateTimeColumn get startedAt => dateTime()();
   DateTimeColumn get endedAt => dateTime().nullable()();
   IntColumn get targetCount => integer()();
-  IntColumn get achievedCount => integer()();
+  IntColumn get achievedCount =>
+      integer().withDefault(const Constant(0))();
+  BoolColumn get isSynced => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 class DetectionsTable extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get sessionId => integer().references(SessionsTable, #id)();
+  TextColumn get sessionId => text().references(SessionsTable, #id)();
   DateTimeColumn get detectedAt => dateTime()();
   RealColumn get confidence => real()();
-  TextColumn get engine => text()(); // 'porcupine' | 'vosk'
+  TextColumn get engine =>
+      text().withDefault(const Constant('tflite'))();
 }
 
-@DriftDatabase(tables: [MantraConfigTable, SessionsTable, DetectionsTable])
+class DailyStatsTable extends Table {
+  IntColumn get mantraId => integer().references(MantraConfigTable, #id)();
+  TextColumn get date => text()(); // ISO date "2026-03-02"
+  IntColumn get totalCount =>
+      integer().withDefault(const Constant(0))();
+  IntColumn get sessionsCount =>
+      integer().withDefault(const Constant(0))();
+  IntColumn get streakDays =>
+      integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {mantraId, date};
+}
+
+class PendingSyncsTable extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get sessionId => text()();
+  TextColumn get payload => text()(); // JSON blob
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get retryCount =>
+      integer().withDefault(const Constant(0))();
+  DateTimeColumn get lastAttemptAt => dateTime().nullable()();
+}
+
+// ──────────────────────────────────────────────
+// Database class
+// ──────────────────────────────────────────────
+
+@DriftDatabase(tables: [
+  MantraConfigTable,
+  SessionsTable,
+  DetectionsTable,
+  DailyStatsTable,
+  PendingSyncsTable,
+])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
+
+  /// For testing only.
+  AppDatabase.forTesting(super.e);
 
   @override
   int get schemaVersion => 1;
@@ -48,61 +99,181 @@ class AppDatabase extends _$AppDatabase {
         },
       );
 
+  // ──────────────────────────────────────────
+  // Seed data
+  // ──────────────────────────────────────────
+
   Future<void> insertDefaultMantras() async {
     await batch((batch) {
-      batch.insertAll(mantraConfigTable, [
-        MantraConfigTableCompanion.insert(
-          name: 'Om Namah Shivaya',
-          devanagari: 'ॐ नमः शिवाय',
-          romanized: 'Om Namah Shivaya',
-          targetCount: 108,
-        ),
-        MantraConfigTableCompanion.insert(
-          name: 'Om Mani Padme Hum',
-          devanagari: 'ॐ मणि पद्मे हूँ',
-          romanized: 'Om Mani Padme Hum',
-          targetCount: 108,
-        ),
-      ], mode: InsertMode.insertOrIgnore);
+      batch.insertAll(
+        mantraConfigTable,
+        [
+          MantraConfigTableCompanion.insert(
+            name: 'Om Namah Shivaya',
+            devanagari: 'ॐ नमः शिवाय',
+            romanized: 'Om Na-mah Shi-vaa-ya',
+          ),
+          MantraConfigTableCompanion.insert(
+            name: 'Om Mani Padme Hum',
+            devanagari: 'ॐ मणि पद्मे हूँ',
+            romanized: 'Om Ma-ni Pad-me Hum',
+          ),
+          MantraConfigTableCompanion.insert(
+            name: 'Hare Krishna',
+            devanagari: 'हरे कृष्ण',
+            romanized: 'Ha-re Krish-na',
+          ),
+          MantraConfigTableCompanion.insert(
+            name: 'Om Shanti',
+            devanagari: 'ॐ शान्ति',
+            romanized: 'Om Shan-ti',
+          ),
+          MantraConfigTableCompanion.insert(
+            name: 'Om Gam Ganapataye',
+            devanagari: 'ॐ गं गणपतये नमः',
+            romanized: 'Om Gam Ga-na-pa-ta-ye',
+          ),
+        ],
+        mode: InsertMode.insertOrIgnore,
+      );
     });
   }
 
-  // --- Query helpers ---
+  // ──────────────────────────────────────────
+  // Mantra queries
+  // ──────────────────────────────────────────
 
   Future<List<MantraConfigTableData>> getAllMantras() =>
-      select(mantraConfigTable).get();
+      (select(mantraConfigTable)
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .get();
 
   Stream<List<MantraConfigTableData>> watchAllMantras() =>
-      select(mantraConfigTable).watch();
+      (select(mantraConfigTable)
+            ..where((t) => t.isActive.equals(true))
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .watch();
 
-  Future<int> startSession(int mantraId, int target) =>
-      into(sessionsTable).insert(SessionsTableCompanion.insert(
-        mantraId: mantraId,
-        startedAt: DateTime.now(),
-        targetCount: target,
-        achievedCount: 0,
-      ));
+  Future<MantraConfigTableData> getMantraById(int id) =>
+      (select(mantraConfigTable)..where((t) => t.id.equals(id))).getSingle();
 
-  Future<void> endSession(int sessionId, int achievedCount) =>
+  // ──────────────────────────────────────────
+  // Session queries
+  // ──────────────────────────────────────────
+
+  Future<void> insertSession(SessionsTableCompanion entry) =>
+      into(sessionsTable).insert(entry);
+
+  Future<SessionsTableData> getSessionById(String id) =>
+      (select(sessionsTable)..where((s) => s.id.equals(id))).getSingle();
+
+  Future<void> markSessionEnded(
+      String sessionId, DateTime endedAt, int achievedCount) =>
       (update(sessionsTable)..where((s) => s.id.equals(sessionId))).write(
         SessionsTableCompanion(
-          endedAt: Value(DateTime.now()),
+          endedAt: Value(endedAt),
           achievedCount: Value(achievedCount),
         ),
       );
 
-  Future<void> recordDetection(int sessionId, double confidence, String engine) =>
-      into(detectionsTable).insert(DetectionsTableCompanion.insert(
-        sessionId: sessionId,
-        detectedAt: DateTime.now(),
-        confidence: confidence,
-        engine: engine,
-      ));
+  Future<void> markSessionSynced(String sessionId) =>
+      (update(sessionsTable)..where((s) => s.id.equals(sessionId))).write(
+        const SessionsTableCompanion(isSynced: Value(true)),
+      );
 
-  Stream<List<DetectionsTableData>> watchDetectionsForSession(int sessionId) =>
-      (select(detectionsTable)..where((d) => d.sessionId.equals(sessionId)))
+  Stream<List<SessionsTableData>> watchRecentSessions({int limit = 10}) =>
+      (select(sessionsTable)
+            ..orderBy([(s) => OrderingTerm.desc(s.startedAt)])
+            ..limit(limit))
           .watch();
+
+  /// Find orphaned sessions (started but never ended).
+  Future<List<SessionsTableData>> getOrphanedSessions() =>
+      (select(sessionsTable)..where((s) => s.endedAt.isNull())).get();
+
+  // ──────────────────────────────────────────
+  // Detection queries
+  // ──────────────────────────────────────────
+
+  Future<void> insertDetection(DetectionsTableCompanion entry) =>
+      into(detectionsTable).insert(entry);
+
+  Stream<List<DetectionsTableData>> watchDetectionsForSession(
+          String sessionId) =>
+      (select(detectionsTable)
+            ..where((d) => d.sessionId.equals(sessionId)))
+          .watch();
+
+  Future<DetectionsTableData?> getLastDetectionForSession(
+      String sessionId) async {
+    final q = select(detectionsTable)
+      ..where((d) => d.sessionId.equals(sessionId))
+      ..orderBy([(d) => OrderingTerm.desc(d.detectedAt)])
+      ..limit(1);
+    final results = await q.get();
+    return results.isEmpty ? null : results.first;
+  }
+
+  // ──────────────────────────────────────────
+  // DailyStats queries
+  // ──────────────────────────────────────────
+
+  Future<void> upsertDailyStat({
+    required int mantraId,
+    required String date,
+    required int countToAdd,
+  }) async {
+    await customStatement(
+      'INSERT INTO daily_stats_table (mantra_id, date, total_count, sessions_count, streak_days) '
+      'VALUES (?, ?, ?, 1, 0) '
+      'ON CONFLICT(mantra_id, date) DO UPDATE SET '
+      'total_count = total_count + ?, sessions_count = sessions_count + 1',
+      [mantraId, date, countToAdd, countToAdd],
+    );
+  }
+
+  Stream<List<DailyStatsTableData>> watchTodayStats(String todayDate) =>
+      (select(dailyStatsTable)..where((d) => d.date.equals(todayDate)))
+          .watch();
+
+  Future<List<DailyStatsTableData>> getStatsForRange(
+      String startDate, String endDate) =>
+      (select(dailyStatsTable)
+            ..where((d) =>
+                d.date.isBiggerOrEqualValue(startDate) &
+                d.date.isSmallerOrEqualValue(endDate))
+            ..orderBy([(d) => OrderingTerm.asc(d.date)]))
+          .get();
+
+  // ──────────────────────────────────────────
+  // PendingSync queries
+  // ──────────────────────────────────────────
+
+  Future<void> insertPendingSync(PendingSyncsTableCompanion entry) =>
+      into(pendingSyncsTable).insert(entry);
+
+  Future<List<PendingSyncsTableData>> getPendingSyncs({int maxRetries = 3}) =>
+      (select(pendingSyncsTable)
+            ..where(
+                (p) => p.retryCount.isSmallerThanValue(maxRetries))
+            ..orderBy([(p) => OrderingTerm.asc(p.createdAt)]))
+          .get();
+
+  Future<void> markSyncComplete(int syncId) =>
+      (delete(pendingSyncsTable)..where((p) => p.id.equals(syncId))).go();
+
+  Future<void> incrementSyncRetry(int syncId) async {
+    await customStatement(
+      'UPDATE pending_syncs_table SET retry_count = retry_count + 1, '
+      'last_attempt_at = ? WHERE id = ?',
+      [DateTime.now().millisecondsSinceEpoch ~/ 1000, syncId],
+    );
+  }
 }
+
+// ──────────────────────────────────────────────
+// Database connection
+// ──────────────────────────────────────────────
 
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
@@ -111,3 +282,4 @@ LazyDatabase _openConnection() {
     return NativeDatabase.createInBackground(file);
   });
 }
+
