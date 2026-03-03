@@ -42,6 +42,9 @@ class AudioEngine {
     // EventSink for streaming detections to Dart
     var eventSink: EventChannel.EventSink? = null
 
+    // Audio buffer manager for Sarvam ASR integration
+    val bufferManager = AudioBufferManager()
+
     fun start(mantras: List<Map<String, Any>>, threshold: Float) {
         if (isRecording) return
         this.threshold = threshold
@@ -115,6 +118,11 @@ class AudioEngine {
             frameCount++
             // Step 1: VAD gate — skip silence
             val vadPassed = VadGate.isVoiceActive(buffer)
+
+            // Always buffer frames when buffering is active (for ASR)
+            if (bufferManager.isActive()) {
+                bufferManager.addFrame(buffer)
+            }
 
             // Debug: log every 100th frame regardless of VAD
             if (frameCount % 100 == 0) {

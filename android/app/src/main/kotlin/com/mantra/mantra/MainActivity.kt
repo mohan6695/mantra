@@ -63,6 +63,18 @@ class MainActivity : FlutterActivity() {
                     audioEngine.updateCalibration(energy, refractoryMs)
                     result.success(null)
                 }
+                "startBuffering" -> {
+                    audioEngine.bufferManager.startBuffering()
+                    result.success(null)
+                }
+                "flushBuffer" -> {
+                    val wav = audioEngine.bufferManager.flushAsWav()
+                    result.success(wav)
+                }
+                "stopBuffering" -> {
+                    audioEngine.bufferManager.stopBuffering()
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

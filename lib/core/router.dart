@@ -5,6 +5,10 @@ import '../features/calibration/calibration_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/verse/verse_picker_screen.dart';
 import '../features/verse/verse_session_screen.dart';
+import '../features/insights/insights_screen.dart';
+import '../features/leaderboard/leaderboard_screen.dart';
+import '../features/congregation/congregation_list_screen.dart';
+import '../features/congregation/congregation_session_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -38,6 +42,22 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/insights',
+      builder: (context, state) => const InsightsScreen(),
+    ),
+    GoRoute(
+      path: '/leaderboard',
+      builder: (context, state) => const LeaderboardScreen(),
+    ),
+    GoRoute(
+      path: '/congregation',
+      builder: (context, state) => const CongregationListScreen(),
+    ),
+    GoRoute(
+      path: '/congregation/active',
+      builder: (context, state) => const CongregationSessionScreen(),
     ),
   ],
 );

@@ -4,6 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/local/database.dart';
 import '../../data/sample_verses.dart';
+import '../insights/insights_provider.dart';
+import '../insights/insights_engine.dart'; // InsightType
+import '../leaderboard/leaderboard_provider.dart';
+import '../congregation/congregation_provider.dart';
 import 'dashboard_provider.dart';
 
 /// Main dashboard — home screen of the app.
@@ -28,6 +32,8 @@ class DashboardScreen extends ConsumerWidget {
           ref.invalidate(todayStatsProvider);
           ref.invalidate(streakProvider);
           ref.invalidate(heatmapDataProvider);
+          ref.invalidate(insightsProvider);
+          ref.invalidate(weeklySummaryProvider);
         },
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -35,6 +41,14 @@ class DashboardScreen extends ConsumerWidget {
             _TodayCard(),
             SizedBox(height: 12),
             _StreakCard(),
+            SizedBox(height: 12),
+            _QuickNavRow(),
+            SizedBox(height: 12),
+            _DevotionScoreCard(),
+            SizedBox(height: 12),
+            _ChallengePreviewCard(),
+            SizedBox(height: 12),
+            _CongregationPreviewCard(),
             SizedBox(height: 12),
             _HeatmapCalendar(),
             SizedBox(height: 12),
@@ -461,6 +475,331 @@ class _RecentSessions extends ConsumerWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return '${months[dt.month - 1]} ${dt.day}';
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Quick Navigation Row
+// ─────────────────────────────────────────────────────────
+
+class _QuickNavRow extends StatelessWidget {
+  const _QuickNavRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: _NavChip(
+            icon: Icons.insights,
+            label: 'Insights',
+            color: Colors.purple,
+            onTap: () => context.push('/insights'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _NavChip(
+            icon: Icons.leaderboard,
+            label: 'Leaderboard',
+            color: Colors.amber.shade700,
+            onTap: () => context.push('/leaderboard'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _NavChip(
+            icon: Icons.groups,
+            label: 'Congregation',
+            color: Colors.teal,
+            onTap: () => context.push('/congregation'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NavChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _NavChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                  textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Devotion Score Card (from insights)
+// ─────────────────────────────────────────────────────────
+
+class _DevotionScoreCard extends ConsumerWidget {
+  const _DevotionScoreCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final insightsAsync = ref.watch(insightsProvider);
+    final theme = Theme.of(context);
+
+    return insightsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (insights) {
+        final devotionInsight = insights.where(
+            (i) => i.type == InsightType.devotionScore).firstOrNull;
+        if (devotionInsight == null) return const SizedBox.shrink();
+
+        return Card(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => context.push('/insights'),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(devotionInsight.emoji ?? '🕉️',
+                      style: const TextStyle(fontSize: 36)),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Devotion Score',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(devotionInsight.title,
+                            style: theme.textTheme.bodySmall),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: ((devotionInsight.value ?? 0) / 100)
+                                .clamp(0.0, 1.0),
+                            minHeight: 8,
+                            backgroundColor:
+                                theme.colorScheme.surfaceContainerHighest,
+                            color: _devotionColor(devotionInsight.value ?? 0),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Color _devotionColor(double score) {
+    if (score >= 90) return Colors.amber;
+    if (score >= 75) return Colors.orange;
+    if (score >= 55) return Colors.green;
+    if (score >= 35) return Colors.blue;
+    return Colors.grey;
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Challenge Preview Card
+// ─────────────────────────────────────────────────────────
+
+class _ChallengePreviewCard extends ConsumerWidget {
+  const _ChallengePreviewCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final challengesAsync = ref.watch(challengesProvider);
+    final theme = Theme.of(context);
+
+    return challengesAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (challenges) {
+        if (challenges.isEmpty) return const SizedBox.shrink();
+        final challenge = challenges.first;
+        return Card(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => context.push('/leaderboard'),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.emoji_events, color: Colors.amber),
+                      const SizedBox(width: 8),
+                      Text('Active Challenge',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      Text('${challenge.timeRemaining.inDays}d left',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.outline)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(challenge.title,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: challenge.progress.clamp(0.0, 1.0),
+                      minHeight: 8,
+                      backgroundColor:
+                          theme.colorScheme.surfaceContainerHighest,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                          '${challenge.participantCount} participants',
+                          style: theme.textTheme.labelSmall),
+                      Text('${(challenge.progress * 100).round()}%',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Congregation Preview Card
+// ─────────────────────────────────────────────────────────
+
+class _CongregationPreviewCard extends ConsumerWidget {
+  const _CongregationPreviewCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final congState = ref.watch(congregationProvider);
+    final theme = Theme.of(context);
+
+    if (congState is CongregationActive) {
+      return Card(
+        color: theme.colorScheme.tertiaryContainer.withAlpha(80),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => context.push('/congregation/active'),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.groups, size: 32, color: Colors.teal),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(congState.session.name,
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(
+                          '${congState.participants.length} chanting · '
+                          '${congState.session.totalChants} total',
+                          style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+                Column(
+                  children: [
+                    Text('${congState.myCount}',
+                        style: theme.textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.bold)),
+                    Text('You', style: theme.textTheme.labelSmall),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // No active session — show invite
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => context.push('/congregation'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withAlpha(30),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.groups, color: Colors.teal),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Group Bhajan',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    Text('Start or join a congregation',
+                        style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
