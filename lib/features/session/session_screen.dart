@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/providers.dart';
 import '../../data/local/database.dart';
 import 'session_provider.dart';
@@ -55,6 +56,18 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
 
   Future<void> _startSession() async {
     if (_mantra == null) return;
+
+    // Request mic permission
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission is required')),
+        );
+      }
+      return;
+    }
+
     await ref.read(sessionProvider.notifier).startSession(
           mantra: _mantra!,
           targetCount: _targetCount,
