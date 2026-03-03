@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/local/database.dart';
+import '../../data/sample_verses.dart';
 import 'dashboard_provider.dart';
 
 /// Main dashboard — home screen of the app.
@@ -38,6 +39,8 @@ class DashboardScreen extends ConsumerWidget {
             _HeatmapCalendar(),
             SizedBox(height: 12),
             _PerMantraStats(),
+            SizedBox(height: 12),
+            _VerseMantrasCard(),
             SizedBox(height: 12),
             _RecentSessions(),
             SizedBox(height: 24),
@@ -316,6 +319,69 @@ class _PerMantraStats extends ConsumerWidget {
                 );
               },
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Verse Mantras Card
+// ─────────────────────────────────────────────────────────
+
+class _VerseMantrasCard extends StatelessWidget {
+  const _VerseMantrasCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final verses = allVerses;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Verse Mantras',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                TextButton(
+                  onPressed: () => GoRouter.of(context).push('/verses'),
+                  child: const Text('See All'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Long mantras with word-by-word tracking',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withAlpha(128),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...verses.take(3).map((v) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    child: Text(
+                      v.language.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  title: Text(v.name),
+                  subtitle: Text('${v.totalLines} lines · ${v.totalWords} words'),
+                  trailing: const Icon(Icons.play_circle_outline),
+                  onTap: () => GoRouter.of(context).push('/verse/${v.id}'),
+                )),
           ],
         ),
       ),

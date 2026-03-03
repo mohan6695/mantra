@@ -41,4 +41,6 @@ class AppConstants {
   // Platform channels
   static const String audioMethodChannel = 'com.mantra/audio';
   static const String audioEventChannel = 'com.mantra/detections';
+  static const String verseMethodChannel = 'com.mantra/verse_audio';
+  static const String verseEventChannel = 'com.mantra/verse_events';
 }
