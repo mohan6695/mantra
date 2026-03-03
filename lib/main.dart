@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/providers.dart';
 import 'core/router.dart';
 import 'data/local/database.dart';
 import 'notifications/notification_service.dart';
@@ -15,8 +16,10 @@ void main() async {
   // Notifications init
   await NotificationService.init();
 
-  // Clean up orphaned sessions from potential crashes
+  // Single database instance for the whole app
   final db = AppDatabase();
+
+  // Clean up orphaned sessions from potential crashes
   final orphaned = await db.getOrphanedSessions();
   for (final s in orphaned) {
     final lastDetection = await db.getLastDetectionForSession(s.id);
@@ -27,7 +30,14 @@ void main() async {
     );
   }
 
-  runApp(const ProviderScope(child: MantraApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+      ],
+      child: const MantraApp(),
+    ),
+  );
 }
 
 // ──────────────────────────────────────────────

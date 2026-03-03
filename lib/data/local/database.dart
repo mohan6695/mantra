@@ -223,13 +223,29 @@ class AppDatabase extends _$AppDatabase {
     required String date,
     required int countToAdd,
   }) async {
-    await customStatement(
-      'INSERT INTO daily_stats_table (mantra_id, date, total_count, sessions_count, streak_days) '
-      'VALUES (?, ?, ?, 1, 0) '
-      'ON CONFLICT(mantra_id, date) DO UPDATE SET '
-      'total_count = total_count + ?, sessions_count = sessions_count + 1',
-      [mantraId, date, countToAdd, countToAdd],
-    );
+    // Check if a row already exists for this mantra + date
+    final existing = await (select(dailyStatsTable)
+          ..where((d) => d.mantraId.equals(mantraId) & d.date.equals(date)))
+        .getSingleOrNull();
+
+    if (existing != null) {
+      // Update existing row — this notifies Drift stream watchers
+      await (update(dailyStatsTable)
+            ..where((d) => d.mantraId.equals(mantraId) & d.date.equals(date)))
+          .write(DailyStatsTableCompanion(
+        totalCount: Value(existing.totalCount + countToAdd),
+        sessionsCount: Value(existing.sessionsCount + 1),
+      ));
+    } else {
+      // Insert new row — this also notifies Drift stream watchers
+      await into(dailyStatsTable).insert(DailyStatsTableCompanion(
+        mantraId: Value(mantraId),
+        date: Value(date),
+        totalCount: Value(countToAdd),
+        sessionsCount: const Value(1),
+        streakDays: const Value(0),
+      ));
+    }
   }
 
   Stream<List<DailyStatsTableData>> watchTodayStats(String todayDate) =>

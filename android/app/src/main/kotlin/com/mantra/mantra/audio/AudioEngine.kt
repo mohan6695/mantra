@@ -107,12 +107,22 @@ class AudioEngine {
 
     private fun recordingLoop() {
         val buffer = ShortArray(FRAME_SIZE)
+        var frameCount = 0
         while (isRecording) {
             val read = audioRecord?.read(buffer, 0, FRAME_SIZE) ?: 0
             if (read != FRAME_SIZE) continue
 
+            frameCount++
             // Step 1: VAD gate — skip silence
-            if (!VadGate.isVoiceActive(buffer)) continue
+            val vadPassed = VadGate.isVoiceActive(buffer)
+
+            // Debug: log every 100th frame regardless of VAD
+            if (frameCount % 100 == 0) {
+                val rmsDbg = sqrt(buffer.map { it.toDouble().pow(2) }.average()) / 32768.0
+                Log.d(TAG, "Frame $frameCount: rms=${String.format("%.6f", rmsDbg)} vad=$vadPassed")
+            }
+
+            if (!vadPassed) continue
 
             // Step 2: Compute RMS energy as confidence proxy (0.0 - 1.0)
             val rms = sqrt(buffer.map { it.toDouble().pow(2) }.average()) / 32768.0
@@ -124,9 +134,9 @@ class AudioEngine {
 
             // Step 4: Threshold check
             if (confidence < threshold * 0.5) continue // relaxed for amplitude mode
-            // In amplitude mode we lower the bar since we don't have class scores
 
             lastDetectionTime = now
+            Log.i(TAG, "Detection! confidence=$confidence, frame=$frameCount")
 
             // Step 5: Emit detection to Flutter via EventSink (must be on main thread)
             val event = mapOf<String, Any>(
