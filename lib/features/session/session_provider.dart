@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart';
@@ -38,6 +40,7 @@ class SessionActive extends SessionState {
   final bool isPaused;
   final String recognizedText;
   final bool isSttMode;
+  final String diagnosticInfo;
 
   const SessionActive({
     required this.sessionId,
@@ -49,6 +52,7 @@ class SessionActive extends SessionState {
     this.isPaused = false,
     this.recognizedText = '',
     this.isSttMode = false,
+    this.diagnosticInfo = '',
   });
 
   SessionActive copyWith({
@@ -57,6 +61,7 @@ class SessionActive extends SessionState {
     int? totalRejected,
     bool? isPaused,
     String? recognizedText,
+    String? diagnosticInfo,
   }) =>
       SessionActive(
         sessionId: sessionId,
@@ -68,6 +73,7 @@ class SessionActive extends SessionState {
         isPaused: isPaused ?? this.isPaused,
         recognizedText: recognizedText ?? this.recognizedText,
         isSttMode: isSttMode,
+        diagnosticInfo: diagnosticInfo ?? this.diagnosticInfo,
       );
 
   /// Acceptance rate: accepted / evaluated.
@@ -121,8 +127,38 @@ class SessionNotifier extends StateNotifier<SessionState> {
   bool _useSttMode = false;
   int _minSegmentDurationMs = 500;
   int _maxSegmentDurationMs = 10000;
+  Timer? _sttWatchdog;
+  final List<String> _diagnosticLog = [];
+  File? _logFile;
 
-  SessionNotifier(this._ref) : super(const SessionIdle());
+  SessionNotifier(this._ref) : super(const SessionIdle()) {
+    _initLogFile();
+  }
+
+  Future<void> _initLogFile() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      _logFile = File('${dir.path}/stt_debug.log');
+      await _logFile!.writeAsString('=== STT Debug Log ===\n', mode: FileMode.write);
+    } catch (_) {}
+  }
+
+  void _addDiag(String msg) {
+    final ts = DateTime.now().toString().substring(11, 19);
+    final line = '[$ts] $msg';
+    _diagnosticLog.add(line);
+    // Keep last 20 entries
+    if (_diagnosticLog.length > 20) _diagnosticLog.removeAt(0);
+    debugPrint('DIAG: $msg');
+    // Also write to file (guaranteed to work even without logcat)
+    _logFile?.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+    // Update UI if active
+    if (state is SessionActive) {
+      state = (state as SessionActive).copyWith(
+        diagnosticInfo: _diagnosticLog.join('\n'),
+      );
+    }
+  }
 
   /// Load calibration profile from SharedPreferences.
   Future<EnsembleCalibrationProfile?> _loadCalibration() async {
@@ -144,6 +180,8 @@ class SessionNotifier extends StateNotifier<SessionState> {
     int initialCount = 0,
     String? existingSessionId,
   }) async {
+    _diagnosticLog.clear();
+    _addDiag('Starting session for "${mantra.name}"');
     final sessionId = existingSessionId ?? const Uuid().v4();
     final db = _ref.read(appDatabaseProvider);
 
@@ -165,6 +203,7 @@ class SessionNotifier extends StateNotifier<SessionState> {
     final hasValidCalibration = _calibration != null &&
         _calibration!.isValid &&
         _calibration!.templates.isNotEmpty;
+    _addDiag('Calibration: ${hasValidCalibration ? "valid" : "none"}');
 
     // ── Detection mode selection ──
     // Priority: 1. STT word matching (default)
@@ -173,23 +212,25 @@ class SessionNotifier extends StateNotifier<SessionState> {
 
     // Try STT first (best accuracy — actually matches spoken words)
     _sttService = SttDetectionService();
+    _addDiag('Initializing STT...');
     final sttAvailable = await _sttService!.initialize();
+    _addDiag('STT init result: $sttAvailable');
 
     if (sttAvailable) {
       _useSttMode = true;
       _useSimpleMode = false;
-      debugPrint('Using STT word-matching mode');
+      _addDiag('MODE: STT word-matching');
     } else if (hasValidCalibration) {
       _useSttMode = false;
       _useSimpleMode = false;
       _ensembleDetector = EnsembleDetector(calibration: _calibration!);
-      debugPrint('STT unavailable — using ensemble mode');
+      _addDiag('MODE: Ensemble (STT unavailable)');
     } else {
       _useSttMode = false;
       _useSimpleMode = true;
       _minSegmentDurationMs = (mantra.refractoryMs * 0.6).round().clamp(400, 2000);
       _maxSegmentDurationMs = (mantra.refractoryMs * 6).round().clamp(3000, 15000);
-      debugPrint('STT unavailable, no calibration — using simple energy mode');
+      _addDiag('MODE: Simple energy (no STT, no calibration)');
     }
 
     // Create minimal calibration for native engine (needed for non-STT modes)
@@ -245,11 +286,13 @@ class SessionNotifier extends StateNotifier<SessionState> {
         romanized: mantra.romanized,
         refractoryMs: mantra.refractoryMs,
       );
+      _addDiag('STT configured: rom="${mantra.romanized.substring(0, mantra.romanized.length.clamp(0, 30))}"');
 
       _sttSub = _sttService!.events.listen((event) {
         switch (event) {
           case SttMantraDetected(:final matchResult):
-            debugPrint('STT mantra detected: ${matchResult.confidence}');
+            _sttWatchdog?.cancel(); // got a detection, cancel watchdog
+            _addDiag('DETECTED! conf=${matchResult.confidence.toStringAsFixed(2)}');
             final result = EnsembleResult(
               ensembleScore: matchResult.confidence,
               verdict: DetectionVerdict.accepted,
@@ -258,21 +301,31 @@ class SessionNotifier extends StateNotifier<SessionState> {
               durationMs: 0,
             );
             processor.onAcceptedDetection(result);
-          case SttRecognizedText(:final text, isFinal: _):
+          case SttRecognizedText(:final text, :final isFinal):
+            _sttWatchdog?.cancel(); // got text, cancel watchdog
+            _addDiag('${isFinal ? "FINAL" : "partial"}: "${text.length > 40 ? text.substring(0, 40) : text}"');
             // Update recognized text in UI state
             if (state is SessionActive) {
               state = (state as SessionActive).copyWith(
                 recognizedText: text,
               );
             }
-          case SttStatusChanged():
-            break;
+          case SttStatusChanged(:final status):
+            _addDiag('STT status: $status');
           case SttErrorEvent(:final message):
-            debugPrint('STT error in session: $message');
+            _addDiag('STT error: $message');
         }
       });
 
+      _addDiag('Starting STT listener...');
       await _sttService!.startListening();
+      _addDiag('STT startListening() completed');
+
+      // Watchdog: if no results after 15 seconds, warn user
+      _sttWatchdog = Timer(const Duration(seconds: 15), () {
+        _addDiag('WARNING: No STT results after 15s!');
+        _addDiag('Check: is mic working? Speak into emulator mic.');
+      });
     } else {
       // Non-STT modes: use native AudioEngine
       await AudioChannel.updateEnsembleCalibration(_calibration!);
@@ -331,7 +384,9 @@ class SessionNotifier extends StateNotifier<SessionState> {
       targetCount: targetCount,
       currentCount: initialCount,
       isSttMode: _useSttMode,
+      diagnosticInfo: _diagnosticLog.join('\n'),
     );
+    _addDiag('Session state set to ACTIVE');
   }
 
   /// Pause audio detection (keeps session alive, stops mic).
@@ -447,6 +502,8 @@ class SessionNotifier extends StateNotifier<SessionState> {
     _messageSub = null;
     _sttSub?.cancel();
     _sttSub = null;
+    _sttWatchdog?.cancel();
+    _sttWatchdog = null;
 
     // Stop STT or native engine
     if (_useSttMode) {
@@ -558,6 +615,7 @@ class SessionNotifier extends StateNotifier<SessionState> {
     _segmentSub?.cancel();
     _messageSub?.cancel();
     _sttSub?.cancel();
+    _sttWatchdog?.cancel();
     _ensembleDetector?.dispose();
     _sttService?.dispose();
     super.dispose();

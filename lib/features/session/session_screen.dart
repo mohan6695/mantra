@@ -25,6 +25,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
   int _targetCount = 108;
   MantraConfigTableData? _mantra;
   bool _showCelebration = false;
+  bool _showDebugPanel = true; // Show debug info by default for now
   late AnimationController _celebrationController;
 
   @override
@@ -128,6 +129,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
         centerTitle: true,
         actions: [
           if (session is SessionActive) ...[
+            // Debug info toggle
+            IconButton(
+              icon: Icon(
+                _showDebugPanel ? Icons.bug_report : Icons.bug_report_outlined,
+                color: _showDebugPanel ? Colors.orange : null,
+              ),
+              tooltip: 'Toggle Debug Panel',
+              onPressed: () => setState(() => _showDebugPanel = !_showDebugPanel),
+            ),
             // Reset count
             IconButton(
               icon: const Icon(Icons.restart_alt_rounded),
@@ -148,6 +158,75 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
           children: [
             _buildBody(session, theme),
             if (_showCelebration) _buildCelebrationOverlay(theme),
+            if (_showDebugPanel && session is SessionActive)
+              _buildDebugPanel(session, theme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDebugPanel(SessionActive session, ThemeData theme) {
+    return Positioned(
+      left: 8,
+      right: 8,
+      bottom: 8,
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 200),
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.withAlpha(150)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: const BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.bug_report, size: 14, color: Colors.black),
+                  const SizedBox(width: 6),
+                  Text(
+                    'DEBUG: ${session.isSttMode ? "STT Mode" : "Non-STT Mode"}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => setState(() => _showDebugPanel = false),
+                    child: const Icon(Icons.close, size: 14, color: Colors.black),
+                  ),
+                ],
+              ),
+            ),
+            // Log content
+            Flexible(
+              child: SingleChildScrollView(
+                reverse: true, // auto-scroll to bottom
+                padding: const EdgeInsets.all(8),
+                child: Text(
+                  session.diagnosticInfo.isEmpty
+                      ? '(no diagnostic info yet)'
+                      : session.diagnosticInfo,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontFamily: 'monospace',
+                    color: Colors.greenAccent,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -318,8 +397,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
               return const SizedBox.shrink();
             }),
 
-            // STT recognized text display
-            if (session.isSttMode && session.recognizedText.isNotEmpty)
+            // STT recognized text display or listening indicator
+            if (session.isSttMode)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 child: Container(
@@ -334,13 +413,23 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.mic, size: 16, color: color.withAlpha(180)),
+                      Icon(
+                        session.recognizedText.isNotEmpty ? Icons.mic : Icons.mic_none,
+                        size: 16,
+                        color: session.recognizedText.isNotEmpty
+                            ? color.withAlpha(180)
+                            : theme.colorScheme.onSurface.withAlpha(100),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          session.recognizedText,
+                          session.recognizedText.isNotEmpty
+                              ? session.recognizedText
+                              : 'Listening... speak into your microphone',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withAlpha(200),
+                            color: session.recognizedText.isNotEmpty
+                                ? theme.colorScheme.onSurface.withAlpha(200)
+                                : theme.colorScheme.onSurface.withAlpha(100),
                             fontStyle: FontStyle.italic,
                           ),
                           maxLines: 2,

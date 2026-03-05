@@ -69,6 +69,7 @@ class SttDetectionService {
   bool _isInitialized = false;
   bool _isActive = false;
   bool _isPaused = false;
+  bool _isRestarting = false; // Guard against overlapping restarts
 
   // ── Match tracking (delta counting per segment) ──
   int _matchesCounted = 0;
@@ -206,15 +207,24 @@ class SttDetectionService {
   Future<void> _beginListening() async {
     if (!_isActive || _isPaused) return;
     if (_speech.isListening) return;
+    if (_isRestarting) return; // Prevent overlapping restarts
 
+    _isRestarting = true;
     _matchesCounted = 0; // fresh segment
 
     try {
+      // Small delay to let SpeechRecognizer fully release resources
+      await Future.delayed(const Duration(milliseconds: 200));
+      if (!_isActive || _isPaused) {
+        _isRestarting = false;
+        return;
+      }
+
       await _speech.listen(
         onResult: _onResult,
         localeId: _selectedLocale,
         listenFor: const Duration(seconds: 60),
-        pauseFor: const Duration(seconds: 2),
+        pauseFor: const Duration(seconds: 3),
         listenOptions: SpeechListenOptions(
           partialResults: true,
           cancelOnError: false,
@@ -225,7 +235,9 @@ class SttDetectionService {
     } catch (e) {
       debugPrint('STT: listen() threw: $e');
       _consecutiveRealErrors++;
-      _scheduleRestart();
+      _scheduleRestart(delayMs: 1000);
+    } finally {
+      _isRestarting = false;
     }
   }
 
@@ -439,10 +451,10 @@ class SttDetectionService {
     debugPrint('STT status: $status');
     _eventController.add(SttStatusChanged(status: status));
 
-    if ((status == 'notListening' || status == 'done') &&
-        _isActive &&
-        !_isPaused) {
-      _scheduleRestart();
+    // Only restart on 'done' — 'notListening' always precedes 'done',
+    // so restarting on both causes a double-fire race condition.
+    if (status == 'done' && _isActive && !_isPaused) {
+      _scheduleRestart(delayMs: 300);
     }
   }
 
@@ -452,10 +464,19 @@ class SttDetectionService {
     _eventController.add(SttErrorEvent(message: msg));
 
     // ── Silence / no-match: NOT a real error ──
-    // These fire when nobody is speaking. Just restart immediately.
+    // These fire when nobody is speaking. Just restart after a short delay.
     if (msg == 'error_no_match' || msg == 'error_speech_timeout') {
       if (_isActive && !_isPaused) {
-        _scheduleRestart(delayMs: 100); // fast restart
+        _scheduleRestart(delayMs: 500); // Slightly longer to avoid rapid cycling
+      }
+      return;
+    }
+
+    // ── Client error: SpeechRecognizer restart race ──
+    // This happens when restarting too quickly. Use longer backoff.
+    if (msg == 'error_client') {
+      if (_isActive && !_isPaused) {
+        _scheduleRestart(delayMs: 2000); // 2 second backoff
       }
       return;
     }
@@ -463,7 +484,7 @@ class SttDetectionService {
     // ── Busy: SpeechRecognizer occupied, short retry ──
     if (msg == 'error_busy') {
       if (_isActive && !_isPaused) {
-        _scheduleRestart(delayMs: 500);
+        _scheduleRestart(delayMs: 1000);
       }
       return;
     }
@@ -501,7 +522,7 @@ class SttDetectionService {
     }
   }
 
-  void _scheduleRestart({int delayMs = 150}) {
+  void _scheduleRestart({int delayMs = 500}) {
     _restartTimer?.cancel();
     _restartTimer = Timer(Duration(milliseconds: delayMs), () {
       if (_isActive && !_isPaused) _beginListening();
