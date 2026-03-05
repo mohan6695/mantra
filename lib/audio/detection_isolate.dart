@@ -1,8 +1,9 @@
 import 'dart:async';
 import '../core/constants.dart';
 import '../data/local/database.dart';
+import 'ensemble_detector.dart';
 
-/// Messages sent from the detection isolate to the UI isolate.
+/// Messages sent from the detection processor to the UI layer.
 sealed class DetectionMessage {}
 
 class CountUpdate extends DetectionMessage {
@@ -20,24 +21,30 @@ class MilestoneReached extends DetectionMessage {
   MilestoneReached(this.lifetimeCount);
 }
 
-/// Manages detection gating and counting logic.
-/// Designed to run processing off the UI thread.
+/// Per-detection diagnostic info exposed to UI / debug overlay.
+class DetectionDiagnostic extends DetectionMessage {
+  final EnsembleResult result;
+  DetectionDiagnostic(this.result);
+}
+
+/// Manages counting, DB persistence, and UI messaging for accepted detections.
 ///
-/// Receives DetectionEvents, applies refractory gate, updates counter,
-/// and sends results back to UI via a stream.
+/// The heavy lifting (refractory gating, 6-signal scoring, edge-case handling)
+/// is done upstream by [EnsembleDetector]. This processor only handles:
+///   - Counting accepted detections
+///   - Writing detections to the local SQLite database
+///   - Emitting [DetectionMessage]s to the UI layer
+///   - Checking target & milestone progress
 class DetectionProcessor {
   final AppDatabase db;
   final StreamController<DetectionMessage> _messageController =
       StreamController<DetectionMessage>.broadcast();
 
-  DateTime? _lastDetectionTime;
   int _sessionCount = 0;
-  late String _sessionId;
-  // ignore: unused_field
-  late int _mantraId;
-  late int _targetCount;
-  late int _refractoryMs;
-  late double _confidenceThreshold;
+  String _sessionId = '';
+  int _mantraId = 0;
+  int _targetCount = 0;
+  bool _targetReachedEmitted = false;
 
   DetectionProcessor({required this.db});
 
@@ -49,61 +56,64 @@ class DetectionProcessor {
     required String sessionId,
     required int mantraId,
     required int targetCount,
-    required int refractoryMs,
-    double confidenceThreshold = AppConstants.defaultConfidenceThreshold,
+    int initialCount = 0,
   }) {
     _sessionId = sessionId;
     _mantraId = mantraId;
     _targetCount = targetCount;
-    _refractoryMs = refractoryMs;
-    _confidenceThreshold = confidenceThreshold;
-    _sessionCount = 0;
-    _lastDetectionTime = null;
+    _sessionCount = initialCount;
+    _targetReachedEmitted = initialCount >= targetCount;
   }
 
-  /// Process a raw detection event from the native audio engine.
-  Future<void> onDetectionEvent({
-    required int mantraIndex,
-    required double confidence,
-    required DateTime timestamp,
-  }) async {
-    // ── REFRACTORY GATE ──
-    // Prevents double-counting when a single chant spans multiple frames.
-    if (_lastDetectionTime != null) {
-      final elapsed =
-          timestamp.difference(_lastDetectionTime!).inMilliseconds;
-      if (elapsed < _refractoryMs) return; // REJECT — too soon
+  /// Directly set the count (for manual increment/decrement).
+  void adjustCount(int newCount) {
+    _sessionCount = newCount;
+    _messageController.add(CountUpdate(_sessionCount));
+    // Re-check target (could un-reach if decremented)
+    if (!_targetReachedEmitted && _sessionCount >= _targetCount) {
+      _targetReachedEmitted = true;
+      _messageController.add(TargetReached(_sessionCount));
     }
+  }
 
-    // ── CONFIDENCE CHECK ──
-    if (confidence < _confidenceThreshold) return;
-
-    // ── VALID DETECTION ──
-    _lastDetectionTime = timestamp;
+  /// Process an accepted ensemble result.
+  ///
+  /// Only call this with results where `result.isAccepted == true`.
+  /// The caller ([NativeSegmentReceiver] or [SessionNotifier]) is
+  /// responsible for filtering.
+  Future<void> onAcceptedDetection(EnsembleResult result) async {
     _sessionCount++;
 
     // Async DB write — non-blocking fire-and-forget
     db.insertDetection(DetectionsTableCompanion.insert(
       sessionId: _sessionId,
-      detectedAt: timestamp,
-      confidence: confidence,
+      detectedAt: result.timestamp,
+      confidence: result.ensembleScore,
     ));
 
-    // Notify UI
+    // Notify UI of new count
     _messageController.add(CountUpdate(_sessionCount));
 
-    // Target check
-    if (_sessionCount == _targetCount) {
+    // Emit diagnostic for debug overlay
+    _messageController.add(DetectionDiagnostic(result));
+
+    // Target check — emit once
+    if (!_targetReachedEmitted && _sessionCount >= _targetCount) {
+      _targetReachedEmitted = true;
       _messageController.add(TargetReached(_sessionCount));
     }
 
-    // Milestone check (async, non-blocking)
+    // Milestone check
     _checkMilestones();
   }
 
+  /// Process any ensemble result (for diagnostic overlay).
+  /// Does NOT increment counter — only emits diagnostic.
+  void onEnsembleResult(EnsembleResult result) {
+    _messageController.add(DetectionDiagnostic(result));
+  }
+
   Future<void> _checkMilestones() async {
-    // Sum today's total + current session
-    // This is approximate — a full query would be more accurate
     for (final milestone in AppConstants.milestoneCounts) {
       if (_sessionCount == milestone) {
         _messageController.add(MilestoneReached(milestone));

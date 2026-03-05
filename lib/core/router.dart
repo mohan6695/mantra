@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/dashboard/mantra_detail_screen.dart';
 import '../features/session/session_screen.dart';
 import '../features/calibration/calibration_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -16,6 +17,13 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/',
       builder: (context, state) => const DashboardScreen(),
+    ),
+    GoRoute(
+      path: '/mantra/:mantraKey',
+      builder: (context, state) {
+        final mantraKey = state.pathParameters['mantraKey']!;
+        return MantraDetailScreen(mantraKey: mantraKey);
+      },
     ),
     GoRoute(
       path: '/session/:mantraId',

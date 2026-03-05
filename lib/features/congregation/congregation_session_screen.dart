@@ -44,10 +44,15 @@ class _CongregationSessionScreenState
         }
       ],
       threshold: 0.3,
+      mode: 'ensemble',
     );
 
-    _detectionSub = AudioChannel.detectionStream.listen((event) {
-      ref.read(congregationProvider.notifier).onChantDetected();
+    // Listen to raw segment stream — for congregation, accept any
+    // segment with enough energy (no full ensemble needed for group mode)
+    _detectionSub = AudioChannel.segmentStream.listen((segment) {
+      if (segment.peakEnergy > 0.05) {
+        ref.read(congregationProvider.notifier).onChantDetected();
+      }
     });
 
     setState(() => _isChanting = true);

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/local/database.dart';
+import '../../data/models/mantra_metadata.dart';
 import '../../data/sample_verses.dart';
 import '../insights/insights_provider.dart';
 import '../insights/insights_engine.dart'; // InsightType
@@ -126,18 +127,24 @@ class _TodayCard extends ConsumerWidget {
                 ),
                 if (stats.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  ...stats.map((s) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            Text('Mantra #${s.mantraId}',
-                                style: theme.textTheme.bodySmall),
-                            const Spacer(),
-                            Text('${s.totalCount}',
-                                style: theme.textTheme.bodyMedium),
-                          ],
-                        ),
-                      )),
+                  ...stats.map((s) {
+                    final meta = mantraMetadataRegistry['${s.mantraId}'];
+                    final label = meta?.name ?? 'Mantra #${s.mantraId}';
+                    final icon = meta?.icon ?? '🙏';
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Text(icon, style: const TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                          Text(label, style: theme.textTheme.bodySmall),
+                          const Spacer(),
+                          Text('${s.totalCount}',
+                              style: theme.textTheme.bodyMedium),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
               ],
             );
@@ -285,7 +292,37 @@ class _PerMantraStats extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Mantras', style: theme.textTheme.titleMedium),
+            Row(
+              children: [
+                const Text('🕉️', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 8),
+                Text('Short Mantras',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${shortMantras.length} mantras',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Repetitive chanting with automatic counting',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withAlpha(128),
+              ),
+            ),
             const SizedBox(height: 8),
             mantrasAsync.when(
               loading: () =>
@@ -295,6 +332,8 @@ class _PerMantraStats extends ConsumerWidget {
                 final todayStats = todayAsync.valueOrNull ?? [];
                 return Column(
                   children: mantras.map((m) {
+                    final meta =
+                        mantraMetadataRegistry['${m.id}'];
                     final stat = todayStats
                         .where((s) => s.mantraId == m.id)
                         .firstOrNull;
@@ -305,14 +344,16 @@ class _PerMantraStats extends ConsumerWidget {
                         backgroundColor:
                             theme.colorScheme.primaryContainer,
                         child: Text(
-                          m.devanagari.characters.first,
-                          style: TextStyle(
-                              color:
-                                  theme.colorScheme.onPrimaryContainer),
+                          meta?.icon ?? m.devanagari.characters.first,
+                          style: const TextStyle(fontSize: 18),
                         ),
                       ),
-                      title: Text(m.name),
-                      subtitle: Text(m.romanized),
+                      title: Text(meta?.name ?? m.name),
+                      subtitle: Text(
+                        meta?.meaning ?? m.romanized,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -328,6 +369,7 @@ class _PerMantraStats extends ConsumerWidget {
                         ],
                       ),
                       onTap: () => context.push('/session/${m.id}'),
+                      onLongPress: () => context.push('/mantra/${m.id}'),
                     );
                   }).toList(),
                 );
@@ -359,43 +401,64 @@ class _VerseMantrasCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                const Text('📿', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 8),
                 Text('Verse Mantras',
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${longMantras.length} stotras',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 TextButton(
                   onPressed: () => GoRouter.of(context).push('/verses'),
                   child: const Text('See All'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
-              'Long mantras with word-by-word tracking',
+              'Long mantras & stotrams with word-by-word tracking',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurface.withAlpha(128),
               ),
             ),
             const SizedBox(height: 12),
-            ...verses.take(3).map((v) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Text(
-                      v.language.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
+            ...verses.map((v) {
+              final meta = mantraMetadataRegistry[v.id];
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  child: Text(
+                    meta?.icon ?? '📖',
+                    style: const TextStyle(fontSize: 18),
                   ),
-                  title: Text(v.name),
-                  subtitle: Text('${v.totalLines} lines · ${v.totalWords} words'),
-                  trailing: const Icon(Icons.play_circle_outline),
-                  onTap: () => GoRouter.of(context).push('/verse/${v.id}'),
-                )),
+                ),
+                title: Text(meta?.name ?? v.name),
+                subtitle: Text(
+                  meta?.meaning ?? '${v.totalLines} lines · ${v.totalWords} words',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.play_circle_outline),
+                onTap: () => GoRouter.of(context).push('/verse/${v.id}'),
+                onLongPress: () => GoRouter.of(context).push('/mantra/${v.id}'),
+              );
+            }),
           ],
         ),
       ),
@@ -814,28 +877,82 @@ class _MantraPickerSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final verses = allVerses;
+
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text('Choose Mantra',
-                style: theme.textTheme.titleMedium),
-          ),
-          ...mantras.map((m) => ListTile(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: Text('Choose Mantra',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            // — Short mantras section —
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('SHORT MANTRAS',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  )),
+            ),
+            ...mantras.map((m) {
+              final meta =
+                  mantraMetadataRegistry['${m.id}'];
+              return ListTile(
                 leading: CircleAvatar(
-                  child: Text(m.devanagari.characters.first),
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  child: Text(meta?.icon ?? m.devanagari.characters.first,
+                      style: const TextStyle(fontSize: 18)),
                 ),
-                title: Text(m.name),
-                subtitle: Text(m.devanagari),
+                title: Text(meta?.name ?? m.name),
+                subtitle: Text(meta?.telugu ?? m.romanized),
                 onTap: () {
                   Navigator.pop(context);
                   context.push('/session/${m.id}');
                 },
-              )),
-          const SizedBox(height: 16),
-        ],
+              );
+            }),
+            const Divider(indent: 16, endIndent: 16),
+            // — Verse mantras section —
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('VERSE MANTRAS & STOTRAMS',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.tertiary,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  )),
+            ),
+            ...verses.map((v) {
+              final meta = mantraMetadataRegistry[v.id];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: theme.colorScheme.tertiaryContainer,
+                  child: Text(meta?.icon ?? '📖',
+                      style: const TextStyle(fontSize: 18)),
+                ),
+                title: Text(meta?.name ?? v.name),
+                subtitle: Text(
+                  '${v.totalLines} lines · ${v.totalWords} words',
+                  style: theme.textTheme.bodySmall,
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/verse/${v.id}');
+                },
+              );
+            }),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }

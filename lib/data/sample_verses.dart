@@ -77,9 +77,12 @@ int _estimateSyllables(String romanized) {
 
 /// All predefined verse mantras in the app.
 List<VerseMantra> get allVerses => [
-      hanumanChalisa,
       gayatriMantra,
       mahamrityunjaya,
+      sriSuktam,
+      hanumanChalisa,
+      vishnuSahasranama,
+      lalithaSahasranama,
       vishwanathaAshtakam,
     ];
 
@@ -618,6 +621,422 @@ final vishwanathaAshtakam = _buildVerse(
     (
       dev: 'वाराणसी पुर पतिं भज विश्वनाथम्',
       rom: 'Vaaraanasee pura patim bhaja Vishwanaatham'
+    ),
+  ],
+);
+
+// ──────────────────────────────────────────────────────────
+// 5. Sri Suktam — Vedic hymn to Goddess Lakshmi (16 mantras)
+// ──────────────────────────────────────────────────────────
+
+final sriSuktam = _buildVerse(
+  id: 'sri_suktam',
+  name: 'Sri Suktam',
+  description: 'Vedic hymn to Goddess Lakshmi for prosperity and abundance',
+  language: 'sa',
+  linePairs: [
+    // Mantra 1
+    (
+      dev: 'हिरण्यवर्णां हरिणीं सुवर्णरजतस्रजाम्',
+      rom: 'Hiranyavarnaam harineem suvarnarajatasrajaam'
+    ),
+    (
+      dev: 'चन्द्रां हिरण्मयीं लक्ष्मीं जातवेदो म आवह',
+      rom: 'Chandraam hiranmayeem lakshmeem jaatavedo ma aavaha'
+    ),
+    // Mantra 2
+    (
+      dev: 'तां म आवह जातवेदो लक्ष्मीमनपगामिनीम्',
+      rom: 'Taam ma aavaha jaatavedo lakshmeemanapagaamineem'
+    ),
+    (
+      dev: 'यस्यां हिरण्यं विन्देयं गामश्वं पुरुषानहम्',
+      rom: 'Yasyaam hiranyam vindeyam gaamashvam purushaanaham'
+    ),
+    // Mantra 3
+    (
+      dev: 'अश्वपूर्वां रथमध्यां हस्तिनादप्रबोधिनीम्',
+      rom: 'Ashvapoorvaam rathamadhyaam hastinaadaprabodhineem'
+    ),
+    (
+      dev: 'श्रियं देवीमुपह्वये श्रीर्मा देवीर्जुषताम्',
+      rom: 'Shriyam deveemupahvaye shreermaa deveerjushataam'
+    ),
+    // Mantra 4
+    (
+      dev: 'कांसोस्मितां हिरण्यप्राकारामार्द्रां ज्वलन्तीं तृप्तां तर्पयन्तीम्',
+      rom: 'Kaamsosmitaam hiranyapraakaaraamaardraam jvalanteem truptaam tarpayanteem'
+    ),
+    (
+      dev: 'पद्मे स्थितां पद्मवर्णां तामिहोपह्वये श्रियम्',
+      rom: 'Padme sthitaam padmavarnaam taamihopahvaye shriyam'
+    ),
+    // Mantra 5
+    (
+      dev: 'चन्द्रां प्रभासां यशसा ज्वलन्तीं श्रियं लोके देवजुष्टामुदाराम्',
+      rom: 'Chandraam prabhaasaam yashasaa jvalanteem shriyam loke devajushtaamudaaraam'
+    ),
+    (
+      dev: 'तां पद्मिनीमीं शरणमहं प्रपद्येऽलक्ष्मीर्मे नश्यतां त्वां वृणे',
+      rom: 'Taam padmineemeem sharanamham prapadye alakshmeerme nashyataam tvaam vrune'
+    ),
+    // Mantra 6
+    (
+      dev: 'आदित्यवर्णे तपसोऽधिजातो वनस्पतिस्तव वृक्षोऽथ बिल्वः',
+      rom: 'Aadityavarne tapasoadhijaato vanaspatistava vrukshoatha bilvah'
+    ),
+    (
+      dev: 'तस्य फलानि तपसा नुदन्तु मायान्तरायाश्च बाह्या अलक्ष्मीः',
+      rom: 'Tasya phalaani tapasaa nudantu maayaantaraayaashcha baahyaa alakshmeeh'
+    ),
+    // Mantra 7
+    (
+      dev: 'उपैतु मां देवसखः कीर्तिश्च मणिना सह',
+      rom: 'Upaitu maam devasakhah keertishcha maninaa saha'
+    ),
+    (
+      dev: 'प्रादुर्भूतोऽस्मि राष्ट्रेऽस्मिन् कीर्तिमृद्धिं ददातु मे',
+      rom: 'Praadurbhootosmi raashtreasmin keertimruddhim dadaatu me'
+    ),
+    // Mantra 8
+    (
+      dev: 'क्षुत्पिपासामलां ज्येष्ठामलक्ष्मीं नाशयाम्यहम्',
+      rom: 'Kshutpipaasaamalaam jyeshthaamalakshmeem naashayaamyaham'
+    ),
+    (
+      dev: 'अभूतिमसमृद्धिं च सर्वां निर्णुद मे गृहात्',
+      rom: 'Abhootim asamruddhim cha sarvaam nirnuda me gruhaat'
+    ),
+    // Mantra 9
+    (
+      dev: 'गन्धद्वारां दुराधर्षां नित्यपुष्टां करीषिणीम्',
+      rom: 'Gandhadvaaraam duraadharshaam nityapushtaam kareeshineem'
+    ),
+    (
+      dev: 'ईश्वरीं सर्वभूतानां तामिहोपह्वये श्रियम्',
+      rom: 'Eeshvareem sarvabhootaanaam taamihopahvaye shriyam'
+    ),
+    // Mantra 10
+    (
+      dev: 'मनसः काममाकूतिं वाचः सत्यमशीमहि',
+      rom: 'Manasah kaamamaakootim vaachah satyamasheemahi'
+    ),
+    (
+      dev: 'पशूनां रूपमन्नस्य मयि श्रीः श्रयतां यशः',
+      rom: 'Pashoonaam roopam annasya mayi shreeh shrayataam yashah'
+    ),
+    // Mantra 11
+    (
+      dev: 'कर्दमेन प्रजाभूता मयि संभव कर्दम',
+      rom: 'Kardamena prajaabhoota mayi sambhava kardama'
+    ),
+    (
+      dev: 'श्रियं वासय मे कुले मातरं पद्ममालिनीम्',
+      rom: 'Shriyam vaasaya me kule maataram padmamalineem'
+    ),
+    // Mantra 12
+    (
+      dev: 'आपः सृजन्तु स्निग्धानि चिक्लीत वस मे गृहे',
+      rom: 'Aapah srujantu snigdhaani chikleeta vasa me gruhe'
+    ),
+    (
+      dev: 'नि च देवीं मातरं श्रियं वासय मे कुले',
+      rom: 'Ni cha deveem maataram shriyam vaasaya me kule'
+    ),
+    // Mantra 13
+    (
+      dev: 'आर्द्रां पुष्करिणीं पुष्टिं पिङ्गलां पद्ममालिनीम्',
+      rom: 'Aardraam pushkarineem pushteem pingalaam padmamalineem'
+    ),
+    (
+      dev: 'चन्द्रां हिरण्मयीं लक्ष्मीं जातवेदो म आवह',
+      rom: 'Chandraam hiranmayeem lakshmeem jaatavedo ma aavaha'
+    ),
+    // Mantra 14
+    (
+      dev: 'आर्द्रां यः करिणीं यष्टिं सुवर्णां हेममालिनीम्',
+      rom: 'Aardraam yah karineem yashtim suvarnaam hemamalineem'
+    ),
+    (
+      dev: 'सूर्यां हिरण्मयीं लक्ष्मीं जातवेदो म आवह',
+      rom: 'Sooryaam hiranmayeem lakshmeem jaatavedo ma aavaha'
+    ),
+    // Mantra 15
+    (
+      dev: 'तां म आवह जातवेदो लक्ष्मीमनपगामिनीम्',
+      rom: 'Taam ma aavaha jaatavedo lakshmeemanapagaamineem'
+    ),
+    (
+      dev: 'यस्यां हिरण्यं प्रभूतं गावो दास्योऽश्वान् विन्देयं पुरुषानहम्',
+      rom: 'Yasyaam hiranyam prabhootam gaavo daasyoashvaan vindeyam purushaanaham'
+    ),
+  ],
+);
+
+// ──────────────────────────────────────────────────────────
+// 6. Vishnu Sahasranama — Opening Dhyana Shlokas + Stotram (first 20 verses)
+// ──────────────────────────────────────────────────────────
+
+final vishnuSahasranama = _buildVerse(
+  id: 'vishnu_sahasranama',
+  name: 'Vishnu Sahasranama',
+  description: '1000 names of Lord Vishnu — Dhyana Shlokas and opening stotram',
+  language: 'sa',
+  linePairs: [
+    // Dhyana Shloka 1
+    (
+      dev: 'शुक्लाम्बरधरं विष्णुं शशिवर्णं चतुर्भुजम्',
+      rom: 'Shuklambaradharam Vishnum shashivarnam chaturbhujam'
+    ),
+    (
+      dev: 'प्रसन्नवदनं ध्यायेत् सर्वविघ्नोपशान्तये',
+      rom: 'Prasannavadanam dhyaayet sarvavighnopashaantaye'
+    ),
+    // Dhyana Shloka 2
+    (
+      dev: 'यस्य द्विरदवक्त्राद्याः पारिषद्याः परः शतम्',
+      rom: 'Yasya dviradavaktraadyaah paarishadyaah parah shatam'
+    ),
+    (
+      dev: 'विघ्नं निघ्नन्ति सततं विष्वक्सेनं तमाश्रये',
+      rom: 'Vighnam nighnanti satatam Vishvaksenam tamaashraye'
+    ),
+    // Dhyana Shloka 3
+    (
+      dev: 'व्यासं वसिष्ठनप्तारं शक्तेः पौत्रमकल्मषम्',
+      rom: 'Vyaasam Vasishtha naptaaram shakteh pautram akalmmasham'
+    ),
+    (
+      dev: 'पराशरात्मजं वन्दे शुकतातं तपोनिधिम्',
+      rom: 'Paraasharaatmajam vande Shukataatam taponidhim'
+    ),
+    // Dhyana Shloka 4
+    (
+      dev: 'व्यासाय विष्णुरूपाय व्यासरूपाय विष्णवे',
+      rom: 'Vyaasaaya Vishnuroopaaya Vyaasaroopaaya Vishnave'
+    ),
+    (
+      dev: 'नमो वै ब्रह्मनिधये वसिष्ठाय नमो नमः',
+      rom: 'Namo vai Brahmanidhaye Vasishthaaya namo namah'
+    ),
+    // Stotram begins — Verse 1
+    (
+      dev: 'विश्वं विष्णुर्वषट्कारो भूतभव्यभवत्प्रभुः',
+      rom: 'Vishvam Vishnur Vashatkaro Bhootabhavyabhavatprabhuh'
+    ),
+    (
+      dev: 'भूतकृद्भूतभृद्भावो भूतात्मा भूतभावनः',
+      rom: 'Bhootakrudbhootabhrudbhaavo Bhootatmaa Bhootabhaavanah'
+    ),
+    // Verse 2
+    (
+      dev: 'पूतात्मा परमात्मा च मुक्तानां परमा गतिः',
+      rom: 'Pootatmaa paramatmaa cha muktaanaam paramaa gatih'
+    ),
+    (
+      dev: 'अव्ययः पुरुषः साक्षी क्षेत्रज्ञोऽक्षर एव च',
+      rom: 'Avyayah Purushah Saakshee Kshetragnokshara eva cha'
+    ),
+    // Verse 3
+    (
+      dev: 'योगो योगविदां नेता प्रधानपुरुषेश्वरः',
+      rom: 'Yogo yogavidaam netaa pradhaana purusheshvarah'
+    ),
+    (
+      dev: 'नारसिंहवपुः श्रीमान् केशवः पुरुषोत्तमः',
+      rom: 'Naarasimhavapuh Shreemaan Keshavah Purushottamah'
+    ),
+    // Verse 4
+    (
+      dev: 'सर्वः शर्वः शिवः स्थाणुर्भूतादिर्निधिरव्ययः',
+      rom: 'Sarvah Sharvah Shivah Sthaanur Bhootaadir Nidhir Avyayah'
+    ),
+    (
+      dev: 'सम्भवो भावनो भर्ता प्रभवः प्रभुरीश्वरः',
+      rom: 'Sambhavo Bhaavano Bhartaa Prabhavah Prabhur Eeshvarah'
+    ),
+    // Verse 5
+    (
+      dev: 'स्वयम्भूः शम्भुरादित्यः पुष्कराक्षो महास्वनः',
+      rom: 'Svayambhooh Shambhur Aadityah Pushkaraaksho Mahaasvanah'
+    ),
+    (
+      dev: 'अनादिनिधनो धाता विधाता धातुरुत्तमः',
+      rom: 'Anaadinidhano Dhaataa Vidhaataa Dhaaturuttamah'
+    ),
+    // Verse 6
+    (
+      dev: 'अप्रमेयो हृषीकेशः पद्मनाभोऽमरप्रभुः',
+      rom: 'Aprameeyo Hrusheekeshah Padmanaabhomaraprabhuh'
+    ),
+    (
+      dev: 'विश्वकर्मा मनुस्त्वष्टा स्थविष्ठः स्थविरो ध्रुवः',
+      rom: 'Vishvakarmaa Manustvashthaa Sthavishthah Sthaviro Dhruvah'
+    ),
+    // Verse 7
+    (
+      dev: 'अग्राह्यः शाश्वतो कृष्णो लोहिताक्षः प्रतर्दनः',
+      rom: 'Agraahyah Shaashvato Krishno Lohitaakshah Pratardanah'
+    ),
+    (
+      dev: 'प्रभूतस्त्रिककुब्धाम पवित्रं मङ्गलं परम्',
+      rom: 'Prabhootastrikakubdhaama Pavitram Mangalam Param'
+    ),
+    // Verse 8
+    (
+      dev: 'ईशानः प्राणदः प्राणो ज्येष्ठः श्रेष्ठः प्रजापतिः',
+      rom: 'Eeshaanah Praanadah Praano Jyeshthah Shreshthah Prajaapatih'
+    ),
+    (
+      dev: 'हिरण्यगर्भो भूगर्भो माधवो मधुसूदनः',
+      rom: 'Hiranyagarbho Bhoogarbho Maadhavo Madhusoodanah'
+    ),
+    // Verse 9
+    (
+      dev: 'ईश्वरो विक्रमी धन्वी मेधावी विक्रमः क्रमः',
+      rom: 'Eeshvaro Vikramee Dhanvee Medhaavee Vikramah Kramah'
+    ),
+    (
+      dev: 'अनुत्तमो दुराधर्षः कृतज्ञः कृतिरात्मवान्',
+      rom: 'Anuttamo Duraadharshah Krutagnyah Krutir Aatmavaan'
+    ),
+    // Verse 10
+    (
+      dev: 'सुरेशः शरणं शर्म विश्वरेताः प्रजाभवः',
+      rom: 'Sureshah Sharanam Sharma Vishvaretaah Prajaabhavah'
+    ),
+    (
+      dev: 'अहः संवत्सरो व्यालः प्रत्ययः सर्वदर्शनः',
+      rom: 'Ahah Samvatsaro Vyaalah Pratyayah Sarvadarashanah'
+    ),
+  ],
+);
+
+// ──────────────────────────────────────────────────────────
+// 7. Lalitha Sahasranama — Dhyana Shlokas + Opening Stotram (first 20 verses)
+// ──────────────────────────────────────────────────────────
+
+final lalithaSahasranama = _buildVerse(
+  id: 'lalitha_sahasranama',
+  name: 'Lalitha Sahasranama',
+  description: '1000 names of Goddess Lalitha Tripurasundari',
+  language: 'sa',
+  linePairs: [
+    // Dhyana Shloka 1
+    (
+      dev: 'सिन्दूरारुणविग्रहां त्रिनयनां माणिक्यमौलिस्फुरत्',
+      rom: 'Sindoorarunavigraahaam trinayanaam maanikyamaulisphurat'
+    ),
+    (
+      dev: 'तारानायकशेखरां स्मितमुखीमापीनवक्षोरुहाम्',
+      rom: 'Taaraanaayakashekharaam smitamukheem aapeenavakshoruhaam'
+    ),
+    (
+      dev: 'पाणिभ्यामलिपूर्णरत्नचषकं रक्तोत्पलं बिभ्रतीम्',
+      rom: 'Paanibhyaamalipoornaratnachashakam raktotpalam bibhrateem'
+    ),
+    (
+      dev: 'सौम्यां रत्नघटस्थरक्तचरणां ध्यायेत्परामम्बिकाम्',
+      rom: 'Saumyaam ratnaghatastharak tacharanaam dhyaayet paraamambikaam'
+    ),
+    // Dhyana Shloka 2
+    (
+      dev: 'अरुणां करुणातरङ्गिताक्षीं धृतपाशाङ्कुशपुष्पबाणचापाम्',
+      rom: 'Arunaam karunaatarangitaaksheem dhrutapaashaankushapushpabaanachaapaam'
+    ),
+    (
+      dev: 'अणिमादिभिरावृतां मयूखैरहमित्येव विभावये भवानीम्',
+      rom: 'Animaadibhiraavrutaam mayookhair ahamityeva vibhaavaye Bhavaaneem'
+    ),
+    // Stotram begins — Verse 1
+    (
+      dev: 'श्रीमाता श्रीमहाराज्ञी श्रीमत्सिंहासनेश्वरी',
+      rom: 'Shreemaataa Shreemahaaraajnee Shreematsimhaasaneshvaree'
+    ),
+    (
+      dev: 'चिदग्निकुण्डसम्भूता देवकार्यसमुद्यता',
+      rom: 'Chidagnikundasambhootaa Devakaaryasamudyata'
+    ),
+    // Verse 2
+    (
+      dev: 'उद्यद्भानुसहस्राभा चतुर्बाहुसमन्विता',
+      rom: 'Udyadbhaanusahasraabhaa Chaturbaahusamanvitaa'
+    ),
+    (
+      dev: 'रागस्वरूपपाशाढ्या क्रोधाकाराङ्कुशोज्ज्वला',
+      rom: 'Raagasvaroopapaaashaaddhyaa Krodhaakaraankushojjvalaa'
+    ),
+    // Verse 3
+    (
+      dev: 'मनोरूपेक्षुकोदण्डा पञ्चतन्मात्रसायका',
+      rom: 'Manoroopekshukodandaa Panchatanmaatrasaayakaa'
+    ),
+    (
+      dev: 'निजारुणप्रभापूरमज्जद्ब्रह्माण्डमण्डला',
+      rom: 'Nijaarunaprabhaapooramajjad Brahmaandamandala'
+    ),
+    // Verse 4
+    (
+      dev: 'चम्पकाशोकपुन्नागसौगन्धिकलसत्कचा',
+      rom: 'Champakaashoka Punnaaga Saugandhika Lasatkachaa'
+    ),
+    (
+      dev: 'कुरुविन्दमणिश्रेणीकनत्कोटीरमण्डिता',
+      rom: 'Kuruvindamanishrenikana Tkoteera Mandita'
+    ),
+    // Verse 5
+    (
+      dev: 'अष्टमीचन्द्रविभ्राजदलिकस्थलशोभिता',
+      rom: 'Ashtameechandra Vibhraajad Alikasthala Shobhitaa'
+    ),
+    (
+      dev: 'मुखचन्द्रकलङ्काभमृगनाभिविशेषका',
+      rom: 'Muchachandra Kalankaabha Mruganabhi Visheshakaa'
+    ),
+    // Verse 6
+    (
+      dev: 'वदनस्मरमाङ्गल्यगृहतोरणचिल्लिका',
+      rom: 'Vadanasmara Maangalya Gruha Torana Chillikaa'
+    ),
+    (
+      dev: 'वक्त्रलक्ष्मीपरीवाहचलन्मीनाभलोचना',
+      rom: 'Vaktralakshmee Pareevaaha Chalan Meenaabha Lochanaa'
+    ),
+    // Verse 7
+    (
+      dev: 'नवचम्पकपुष्पाभनासादण्डविराजिता',
+      rom: 'Navachampaka Pushpaabha Naasaadanda Viraajitaa'
+    ),
+    (
+      dev: 'ताराकान्तितिरस्कारिनासाभरणभासुरा',
+      rom: 'Taaraakaanti Tiraskari Naasaabharana Bhaasuraa'
+    ),
+    // Verse 8
+    (
+      dev: 'कदम्बमञ्जरीक्लृप्तकर्णपूरमनोहरा',
+      rom: 'Kadambamanjari Klrupta Karna Poora Manoharaa'
+    ),
+    (
+      dev: 'ताटङ्कयुगलीभूततपनोडुपमण्डला',
+      rom: 'Taatanka Yugaleebhoota Tapanodupa Mandala'
+    ),
+    // Verse 9
+    (
+      dev: 'पद्मरागशिलादर्शपरिभाविकपोलभूः',
+      rom: 'Padmaraaga Shilaadarshaparibhaavi Kapolabhuh'
+    ),
+    (
+      dev: 'नवविद्रुमबिम्बश्रीन्यक्कारिरदनच्छदा',
+      rom: 'Navavidruma Bimbashree Nyakkaariradanachchadaa'
+    ),
+    // Verse 10
+    (
+      dev: 'शुद्धविद्याङ्कुराकारद्विजपङ्क्तिद्वयोज्ज्वला',
+      rom: 'Shuddhavidyaankuraakaaradvijaanktidvayojjvalaa'
+    ),
+    (
+      dev: 'कर्पूरवीटिकामोदसमाकर्षद्दिगन्तरा',
+      rom: 'Karpooraveetikaamodasamaakarshaddigantaraa'
     ),
   ],
 );

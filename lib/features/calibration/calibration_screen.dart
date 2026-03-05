@@ -1,12 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../audio/audio_channel.dart';
+import '../../audio/calibration_profile.dart';
+import '../../core/constants.dart';
+import '../../core/providers.dart';
 
 /// 4-step calibration flow:
 ///   1. Microphone check (permission + live level meter)
-///   2. Voice sample recording (3 chants per mantra)
-///   3. Save calibration profile
+///   2. Voice sample recording (3 chants — MFCC extraction)
+///   3. Build & save ensemble calibration profile
 ///   4. Confirmation
 class CalibrationScreen extends ConsumerStatefulWidget {
   const CalibrationScreen({super.key});
@@ -16,20 +22,24 @@ class CalibrationScreen extends ConsumerStatefulWidget {
 }
 
 class _CalibrationScreenState extends ConsumerState<CalibrationScreen> {
-  int _step = 0; // 0-based
+  int _step = 0;
   bool _micReady = false;
   double _liveLevel = 0;
   StreamSubscription? _levelSub;
+  Timer? _levelTimer;
 
-  // Calibration results
-  double _energyThreshold = 0.01;
-  int _refractoryMs = 800;
-  final List<double> _energySamples = [];
-  final List<int> _gapSamples = [];
+  // ── Calibration data ──────────────────────────────
+  static const int _requiredSamples = 3;
+  final List<Map<String, dynamic>> _rawSamples = [];
+  bool _isRecording = false;
+  bool _isSaving = false;
+  String? _saveError;
+  EnsembleCalibrationProfile? _builtProfile;
 
   @override
   void dispose() {
     _levelSub?.cancel();
+    _levelTimer?.cancel();
     super.dispose();
   }
 
@@ -108,28 +118,32 @@ class _CalibrationScreenState extends ConsumerState<CalibrationScreen> {
   }
 
   Future<void> _startMicTest() async {
-    // Start a short audio engine session just for mic testing
-    await AudioChannel.startEngine(mantras: [], threshold: 0.5);
+    await AudioChannel.startEngine(mode: 'mic_test');
 
-    // Listen for detection events as a proxy for mic level
-    _levelSub = AudioChannel.detectionStream.listen((event) {
-      setState(() {
-        _liveLevel = event.confidence;
-        if (_liveLevel > 0.05) _micReady = true;
-      });
+    // Poll live level periodically
+    _levelTimer = Timer.periodic(const Duration(milliseconds: 100), (_) async {
+      try {
+        final level = await AudioChannel.getLiveLevel();
+        if (mounted) {
+          setState(() {
+            _liveLevel = level;
+            if (_liveLevel > 0.05) _micReady = true;
+          });
+        }
+      } catch (_) {}
     });
 
     // Auto-stop after 5 seconds
     Future.delayed(const Duration(seconds: 5), () async {
+      _levelTimer?.cancel();
       await AudioChannel.stopEngine();
-      _levelSub?.cancel();
       if (mounted && !_micReady) {
         setState(() => _micReady = true); // allow proceeding anyway
       }
     });
   }
 
-  // ── Step 2: Voice Sampling ───────────────────────────────
+  // ── Step 2: Voice Sampling (MFCC extraction) ─────────────
 
   Widget _buildVoiceSampling(ThemeData theme) {
     return Column(
@@ -142,37 +156,102 @@ class _CalibrationScreenState extends ConsumerState<CalibrationScreen> {
                 ?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         Text(
-          'Chant naturally 3 times at your normal pace. '
-          'This helps calibrate the detection sensitivity for your voice.',
+          'Chant your mantra $_requiredSamples times at your normal pace. '
+          'Tap "Record" before each chant and "Stop" when finished. '
+          'This builds an acoustic template of YOUR voice.',
           style: theme.textTheme.bodyMedium,
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 24),
 
-        // Sampling button
-        Center(
-          child: FilledButton.icon(
-            onPressed: _runSampling,
-            icon: const Icon(Icons.mic),
-            label: const Text('Start Recording (10s)'),
-            style: FilledButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+        // Progress indicators for each sample
+        ...List.generate(_requiredSamples, (i) {
+          final captured = i < _rawSamples.length;
+          final isCurrentRecording = i == _rawSamples.length && _isRecording;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Icon(
+                  captured
+                      ? Icons.check_circle
+                      : isCurrentRecording
+                          ? Icons.mic
+                          : Icons.circle_outlined,
+                  color: captured
+                      ? Colors.green
+                      : isCurrentRecording
+                          ? Colors.red
+                          : theme.colorScheme.outline,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Sample ${i + 1}',
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: captured ? FontWeight.w600 : FontWeight.normal,
+                    color: isCurrentRecording ? Colors.red : null,
+                  ),
+                ),
+                if (captured && i < _rawSamples.length) ...[
+                  const Spacer(),
+                  Text(
+                    '${_rawSamples[i]['durationMs']}ms',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+                if (isCurrentRecording) ...[
+                  const Spacer(),
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
             ),
-          ),
-        ),
-        const SizedBox(height: 16),
+          );
+        }),
+        const SizedBox(height: 24),
 
-        if (_energySamples.isNotEmpty)
-          Text(
-            'Captured ${_energySamples.length} energy samples, '
-            '${_gapSamples.length} gap measurements.',
-            style: theme.textTheme.bodySmall,
-          ),
+        // Record/Stop button
+        Center(
+          child: _isRecording
+              ? FilledButton.icon(
+                  onPressed: _stopRecording,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop Recording'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 16),
+                  ),
+                )
+              : FilledButton.icon(
+                  onPressed: _rawSamples.length < _requiredSamples
+                      ? _startRecording
+                      : null,
+                  icon: const Icon(Icons.mic),
+                  label: Text(
+                    _rawSamples.isEmpty
+                        ? 'Record Sample 1'
+                        : _rawSamples.length < _requiredSamples
+                            ? 'Record Sample ${_rawSamples.length + 1}'
+                            : 'All samples captured',
+                  ),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 16),
+                  ),
+                ),
+        ),
         const Spacer(),
         Align(
           alignment: Alignment.centerRight,
           child: FilledButton(
-            onPressed: _energySamples.isNotEmpty ? _nextStep : null,
+            onPressed:
+                _rawSamples.length >= AppConstants.minCalibrationRecordings
+                    ? _nextStep
+                    : null,
             child: const Text('Next'),
           ),
         ),
@@ -180,43 +259,27 @@ class _CalibrationScreenState extends ConsumerState<CalibrationScreen> {
     );
   }
 
-  Future<void> _runSampling() async {
-    _energySamples.clear();
-    _gapSamples.clear();
-
-    await AudioChannel.startEngine(mantras: [], threshold: 0.3);
-
-    DateTime? lastDetection;
-    _levelSub = AudioChannel.detectionStream.listen((event) {
-      _energySamples.add(event.confidence);
-      final now = DateTime.now();
-      if (lastDetection != null) {
-        _gapSamples
-            .add(now.difference(lastDetection!).inMilliseconds);
-      }
-      lastDetection = now;
-      if (mounted) setState(() {});
-    });
-
-    await Future.delayed(const Duration(seconds: 10));
-    await AudioChannel.stopEngine();
-    _levelSub?.cancel();
-
-    // Compute calibration
-    if (_energySamples.isNotEmpty) {
-      final meanEnergy =
-          _energySamples.reduce((a, b) => a + b) / _energySamples.length;
-      _energyThreshold = 0.6 * meanEnergy;
-    }
-    if (_gapSamples.isNotEmpty) {
-      final meanGap =
-          _gapSamples.reduce((a, b) => a + b) / _gapSamples.length;
-      _refractoryMs = (0.8 * meanGap).round().clamp(400, 3000);
-    }
-    if (mounted) setState(() {});
+  Future<void> _startRecording() async {
+    setState(() => _isRecording = true);
+    await AudioChannel.startEngine(mode: 'calibration');
+    await AudioChannel.startCalibrationRecording();
   }
 
-  // ── Step 3: Save Profile ─────────────────────────────────
+  Future<void> _stopRecording() async {
+    try {
+      final sample = await AudioChannel.stopCalibrationRecording();
+      if (sample != null) {
+        _rawSamples.add(sample);
+      }
+    } catch (e) {
+      debugPrint('Calibration recording error: $e');
+    } finally {
+      await AudioChannel.stopEngine();
+      if (mounted) setState(() => _isRecording = false);
+    }
+  }
+
+  // ── Step 3: Build & Save Profile ─────────────────────────
 
   Widget _buildSaveProfile(ThemeData theme) {
     return Column(
@@ -224,35 +287,204 @@ class _CalibrationScreenState extends ConsumerState<CalibrationScreen> {
       children: [
         _StepIndicator(current: 2, total: 4),
         const SizedBox(height: 24),
-        Text('Saving Profile',
+        Text('Building Profile',
             style: theme.textTheme.headlineSmall
                 ?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         Text(
-          'Your voice calibration will now be saved.',
+          'Your ${_rawSamples.length} voice sample(s) will be processed to '
+          'build an acoustic fingerprint for detection.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 32),
-        _InfoRow(label: 'Energy threshold', value: _energyThreshold.toStringAsFixed(4)),
-        _InfoRow(label: 'Refractory gap', value: '${_refractoryMs}ms'),
-        const SizedBox(height: 32),
-        Center(
-          child: FilledButton(
-            onPressed: _saveProfile,
-            child: const Text('Save & Continue'),
+
+        if (_builtProfile != null) ...[
+          _InfoRow(
+              label: 'Templates',
+              value: '${_builtProfile!.templates.length}'),
+          _InfoRow(
+              label: 'Energy threshold',
+              value: _builtProfile!.energyThreshold.toStringAsFixed(4)),
+          _InfoRow(
+              label: 'Mean duration',
+              value: '${_builtProfile!.meanDurationMs.toStringAsFixed(0)}ms'),
+          _InfoRow(
+              label: 'Refractory gap',
+              value: '${_builtProfile!.refractoryMs}ms'),
+          _InfoRow(
+              label: 'MFCC dimensions',
+              value: '${_builtProfile!.mfccDim}'),
+          const SizedBox(height: 16),
+        ],
+
+        if (_saveError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text(_saveError!,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error)),
           ),
+
+        Center(
+          child: _isSaving
+              ? const CircularProgressIndicator()
+              : FilledButton(
+                  onPressed: _buildAndSaveProfile,
+                  child: Text(
+                      _builtProfile == null ? 'Build Profile' : 'Save & Continue'),
+                ),
         ),
       ],
     );
   }
 
-  Future<void> _saveProfile() async {
-    // Update native engine calibration
-    await AudioChannel.updateCalibration(CalibrationProfile(
-      energyThreshold: _energyThreshold,
-      refractoryMs: _refractoryMs,
-    ));
-    _nextStep();
+  Future<void> _buildAndSaveProfile() async {
+    setState(() {
+      _isSaving = true;
+      _saveError = null;
+    });
+
+    try {
+      // Build MfccTemplates from raw calibration samples
+      final templates = <MfccTemplate>[];
+      final durations = <double>[];
+      final gaps = <double>[];
+
+      for (int i = 0; i < _rawSamples.length; i++) {
+        final sample = _rawSamples[i];
+
+        // Parse MFCC frames from native
+        final rawFrames = sample['mfccFrames'] as List?;
+        if (rawFrames == null || rawFrames.isEmpty) {
+          setState(() => _saveError = 'Sample ${i + 1} has no MFCC data');
+          return;
+        }
+
+        final mfccFrames = rawFrames
+            .map((f) => Float64List.fromList(
+                (f as List).map((v) => (v as num).toDouble()).toList()))
+            .toList();
+
+        final durationMs = (sample['durationMs'] as num).toInt();
+        durations.add(durationMs.toDouble());
+
+        final rawEnergy = sample['energyContour'] as List?;
+        final energyContour = Float64List.fromList(
+            rawEnergy?.map((v) => (v as num).toDouble()).toList() ?? []);
+
+        final rawVoiced = sample['voicedPattern'] as List?;
+        final voicedPattern =
+            rawVoiced?.map((v) => v as bool).toList() ?? [];
+
+        // Compute mean MFCC across all frames
+        final dim = mfccFrames.first.length;
+        final meanMfccList = List.filled(dim, 0.0);
+        for (final frame in mfccFrames) {
+          for (int d = 0; d < dim; d++) {
+            meanMfccList[d] += frame[d];
+          }
+        }
+        for (int d = 0; d < dim; d++) {
+          meanMfccList[d] /= mfccFrames.length;
+        }
+        final meanMfcc = Float64List.fromList(meanMfccList);
+
+        templates.add(MfccTemplate(
+          frames: mfccFrames,
+          durationMs: durationMs,
+          energyContour: energyContour,
+          voicedPattern: voicedPattern,
+          meanMfcc: meanMfcc,
+        ));
+
+        // Compute inter-sample gaps
+        if (i > 0) {
+          // approximate gap from durations (actual timestamps not available)
+          gaps.add(1000.0); // default 1s gap estimate for calibration
+        }
+      }
+
+      // Compute statistics
+      final meanDuration =
+          durations.reduce((a, b) => a + b) / durations.length;
+      double stdDuration = 0;
+      if (durations.length > 1) {
+        final variance = durations
+                .map((d) => (d - meanDuration) * (d - meanDuration))
+                .reduce((a, b) => a + b) /
+            (durations.length - 1);
+        stdDuration = variance > 0 ? _sqrt(variance) : meanDuration * 0.2;
+      } else {
+        stdDuration = meanDuration * 0.2;
+      }
+
+      final double meanGap =
+          gaps.isNotEmpty ? gaps.reduce((a, b) => a + b) / gaps.length : 1000.0;
+
+      // Compute global mean MFCC
+      final dim = templates.first.meanMfcc.length;
+      final globalMeanList = List.filled(dim, 0.0);
+      for (final t in templates) {
+        for (int d = 0; d < dim; d++) {
+          globalMeanList[d] += t.meanMfcc[d];
+        }
+      }
+      for (int d = 0; d < dim; d++) {
+        globalMeanList[d] /= templates.length;
+      }
+      final globalMean = Float64List.fromList(globalMeanList);
+
+      // Energy threshold: 60% of minimum peak energy across samples
+      final minPeak = _rawSamples
+          .map((s) => (s['peakEnergy'] as num?)?.toDouble() ?? 0.01)
+          .reduce((a, b) => a < b ? a : b);
+      final energyThreshold = 0.6 * minPeak;
+
+      // Refractory: 80% of mean gap, clamped to safe range
+      final refractoryMs = (0.8 * meanGap).round().clamp(400, 3000);
+
+      _builtProfile = EnsembleCalibrationProfile(
+        templates: templates,
+        energyThreshold: energyThreshold,
+        meanDurationMs: meanDuration,
+        stdDurationMs: stdDuration,
+        meanGapMs: meanGap,
+        refractoryMs: refractoryMs,
+        globalMeanMfcc: globalMean,
+        mfccDim: dim,
+        createdAt: DateTime.now(),
+      );
+
+      // Save to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final json = jsonEncode(_builtProfile!.toJson());
+      await prefs.setString(AppConstants.calibrationProfileKey, json);
+
+      // Send to native engine
+      await AudioChannel.updateEnsembleCalibration(_builtProfile!);
+
+      // Mark calibration complete
+      ref.read(isCalibrationCompleteProvider.notifier).state = true;
+
+      if (mounted) {
+        setState(() {});
+        _nextStep();
+      }
+    } catch (e) {
+      setState(() => _saveError = 'Error building profile: $e');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// Simple sqrt for Dart (dart:math would work too, but avoids import).
+  double _sqrt(double x) {
+    if (x <= 0) return 0;
+    double guess = x / 2;
+    for (int i = 0; i < 20; i++) {
+      guess = (guess + x / guess) / 2;
+    }
+    return guess;
   }
 
   // ── Step 4: Confirmation ─────────────────────────────────
@@ -273,13 +505,15 @@ class _CalibrationScreenState extends ConsumerState<CalibrationScreen> {
                   style: theme.textTheme.headlineSmall
                       ?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
-              Text(
-                'Your voice has been calibrated.\n'
-                'Energy: ${_energyThreshold.toStringAsFixed(4)}, '
-                'Gap: ${_refractoryMs}ms',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium,
-              ),
+              if (_builtProfile != null)
+                Text(
+                  '${_builtProfile!.templates.length} voice templates built\n'
+                  'Duration: ${_builtProfile!.meanDurationMs.toStringAsFixed(0)}ms '
+                  '(±${_builtProfile!.stdDurationMs.toStringAsFixed(0)}ms)\n'
+                  'Detection ready with 6-signal ensemble',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium,
+                ),
               const SizedBox(height: 32),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(),

@@ -5,11 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/providers.dart';
 import '../../data/local/database.dart';
+import '../../data/models/mantra_metadata.dart';
 import 'session_provider.dart';
 import 'widgets/ring_progress.dart';
 
 /// Session screen — active chanting session with ring progress, controls,
-/// live feedback, and target-reached celebration.
+/// manual +/- adjustment, pause/resume, and session lifecycle management.
 class SessionScreen extends ConsumerStatefulWidget {
   final int mantraId;
 
@@ -34,6 +35,26 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
       duration: const Duration(seconds: 3),
     );
     _loadMantra();
+    // Reset session state if it belongs to a different mantra
+    _resetIfDifferentMantra();
+  }
+
+  /// If the global session state is from a different mantra, reset to idle.
+  /// This prevents showing stale completed/active states from other mantras.
+  void _resetIfDifferentMantra() {
+    final session = ref.read(sessionProvider);
+    bool needsReset = false;
+    if (session is SessionActive && session.mantra.id != widget.mantraId) {
+      needsReset = true;
+    } else if (session is SessionCompleted && session.mantra.id != widget.mantraId) {
+      needsReset = true;
+    }
+    if (needsReset) {
+      // Use addPostFrameCallback to avoid modifying state during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(sessionProvider.notifier).forceIdle();
+      });
+    }
   }
 
   Future<void> _loadMantra() async {
@@ -106,12 +127,20 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
         title: Text(_mantra?.name ?? 'Session'),
         centerTitle: true,
         actions: [
-          if (session is SessionActive)
+          if (session is SessionActive) ...[
+            // Reset count
+            IconButton(
+              icon: const Icon(Icons.restart_alt_rounded),
+              tooltip: 'Reset Count',
+              onPressed: () => _confirmReset(context),
+            ),
+            // End session
             IconButton(
               icon: const Icon(Icons.stop_circle_outlined),
               tooltip: 'End Session',
               onPressed: _stopSession,
             ),
+          ],
         ],
       ),
       body: SafeArea(
@@ -121,6 +150,29 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
             if (_showCelebration) _buildCelebrationOverlay(theme),
           ],
         ),
+      ),
+    );
+  }
+
+  void _confirmReset(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Count?'),
+        content: const Text('This will reset your chant count to 0.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(sessionProvider.notifier).resetCount();
+            },
+            child: const Text('Reset'),
+          ),
+        ],
       ),
     );
   }
@@ -142,13 +194,34 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Mantra info
+            // Mantra info — English + Telugu
             if (_mantra != null) ...[
+              // Telugu text
+              Builder(builder: (context) {
+                final meta = mantraMetadataRegistry['${_mantra!.id}'];
+                final teluguText = meta?.telugu ?? '';
+                if (teluguText.isNotEmpty) {
+                  return Column(children: [
+                    Text(
+                      teluguText,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                  ]);
+                }
+                return const SizedBox.shrink();
+              }),
+              // English romanized
               Text(
-                _mantra!.devanagari,
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                _mantra!.romanized,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  fontStyle: FontStyle.italic,
                 ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
@@ -209,45 +282,178 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
       progress.clamp(0.0, 1.0),
     )!;
 
+    final notifier = ref.read(sessionProvider.notifier);
+
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Mantra text
-          Text(
-            session.mantra.devanagari,
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: theme.colorScheme.onSurface.withAlpha(178),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Karaoke-style word-by-word mantra display (English romanized)
+            _ChantingWordsDisplay(
+              text: session.mantra.romanized,
+              currentCount: session.currentCount,
+              estimatedChantMs: session.mantra.refractoryMs * 2,
+              accentColor: color,
             ),
-          ),
-          const SizedBox(height: 24),
+            // Telugu subtitle
+            Builder(builder: (context) {
+              final meta = mantraMetadataRegistry['${session.mantra.id}'];
+              final teluguText = meta?.telugu ?? '';
+              if (teluguText.isNotEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                  child: Text(
+                    teluguText.replaceAll('\n', ' '),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface.withAlpha(140),
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            }),
 
-          // Ring progress
-          RingProgressWidget(
-            current: session.currentCount,
-            target: session.targetCount,
-            size: 280,
-            color: color,
-          ),
-          const SizedBox(height: 24),
+            // STT recognized text display
+            if (session.isSttMode && session.recognizedText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest.withAlpha(120),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: color.withAlpha(60),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.mic, size: 16, color: color.withAlpha(180)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          session.recognizedText,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withAlpha(200),
+                            fontStyle: FontStyle.italic,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
-          // Live feedback pulse
-          _LivePulse(isActive: true, color: color),
-          const SizedBox(height: 32),
+            const SizedBox(height: 16),
 
-          // Stop button
-          OutlinedButton.icon(
-            onPressed: _stopSession,
-            icon: const Icon(Icons.stop_rounded),
-            label: const Text('End Session'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: theme.colorScheme.error,
-              side: BorderSide(color: theme.colorScheme.error),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            // Ring progress
+            RingProgressWidget(
+              current: session.currentCount,
+              target: session.targetCount,
+              size: 240,
+              color: color,
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+
+            // Live feedback pulse (hidden when paused)
+            _LivePulse(isActive: !session.isPaused, color: color),
+            if (session.isPaused)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'PAUSED',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.error,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 20),
+
+            // ── Manual +/- counter buttons ──
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Decrement
+                _CountButton(
+                  icon: Icons.remove_rounded,
+                  onPressed: session.currentCount > 0
+                      ? () => notifier.decrementCount()
+                      : null,
+                  color: theme.colorScheme.errorContainer,
+                  iconColor: theme.colorScheme.onErrorContainer,
+                ),
+                const SizedBox(width: 24),
+                // Count display
+                Column(
+                  children: [
+                    Text(
+                      '${session.currentCount}',
+                      style: theme.textTheme.headlineLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                    Text(
+                      'of ${session.targetCount}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withAlpha(128),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 24),
+                // Increment
+                _CountButton(
+                  icon: Icons.add_rounded,
+                  onPressed: () => notifier.incrementCount(),
+                  color: theme.colorScheme.primaryContainer,
+                  iconColor: theme.colorScheme.onPrimaryContainer,
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+
+            // ── Control row: Pause/Resume + End ──
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Pause / Resume
+                FilledButton.tonalIcon(
+                  onPressed: session.isPaused
+                      ? () => notifier.resumeSession()
+                      : () => notifier.pauseSession(),
+                  icon: Icon(
+                    session.isPaused
+                        ? Icons.play_arrow_rounded
+                        : Icons.pause_rounded,
+                  ),
+                  label: Text(session.isPaused ? 'Resume' : 'Pause'),
+                ),
+                const SizedBox(width: 16),
+                // End session
+                OutlinedButton.icon(
+                  onPressed: _stopSession,
+                  icon: const Icon(Icons.stop_rounded),
+                  label: const Text('End'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    side: BorderSide(color: theme.colorScheme.error),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -256,10 +462,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
 
   Widget _buildCompletedView(SessionCompleted session, ThemeData theme) {
     final metTarget = session.achievedCount >= session.targetCount;
+    final notifier = ref.read(sessionProvider.notifier);
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -282,15 +489,63 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
                 color: theme.colorScheme.onSurface.withAlpha(153),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
               session.mantra.name,
               style: theme.textTheme.bodyLarge,
             ),
-            const SizedBox(height: 32),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Back to Dashboard'),
+            const SizedBox(height: 36),
+
+            // ── Session actions ──
+            // Continue (keep count, resume listening)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  final status = await Permission.microphone.request();
+                  if (!status.isGranted) return;
+                  notifier.continueSession();
+                },
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: Text(
+                  metTarget ? 'Keep Going' : 'Continue',
+                ),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Restart (fresh count, same mantra & target)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () async {
+                  final status = await Permission.microphone.request();
+                  if (!status.isGranted) return;
+                  notifier.restartSession();
+                },
+                icon: const Icon(Icons.replay_rounded),
+                label: const Text('Restart (Reset Count)'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Back to dashboard
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.dashboard_rounded),
+                label: const Text('Back to Dashboard'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
             ),
           ],
         ),
@@ -321,7 +576,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    '🎉 Target Reached! 🎉',
+                    'Target Reached!',
                     style: theme.textTheme.headlineMedium?.copyWith(
                       color:
                           Colors.white.withAlpha((opacity * 255).toInt()),
@@ -334,6 +589,42 @@ class _SessionScreenState extends ConsumerState<SessionScreen>
           ),
         );
       },
+    );
+  }
+}
+
+/// Circular +/- button for manual count adjustment.
+class _CountButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final Color color;
+  final Color iconColor;
+
+  const _CountButton({
+    required this.icon,
+    required this.onPressed,
+    required this.color,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: onPressed != null ? color : color.withAlpha(80),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        child: SizedBox(
+          width: 56,
+          height: 56,
+          child: Icon(
+            icon,
+            size: 28,
+            color: onPressed != null ? iconColor : iconColor.withAlpha(80),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -389,6 +680,145 @@ class _LivePulseState extends State<_LivePulse>
           ),
         );
       },
+    );
+  }
+}
+
+/// Karaoke-style word-by-word mantra display.
+///
+/// When [currentCount] changes, it animates through each word of the
+/// mantra text sequentially, highlighting the "current" word.
+class _ChantingWordsDisplay extends StatefulWidget {
+  final String text;
+  final int currentCount;
+  final int estimatedChantMs;
+  final Color accentColor;
+
+  const _ChantingWordsDisplay({
+    required this.text,
+    required this.currentCount,
+    required this.estimatedChantMs,
+    required this.accentColor,
+  });
+
+  @override
+  State<_ChantingWordsDisplay> createState() => _ChantingWordsDisplayState();
+}
+
+class _ChantingWordsDisplayState extends State<_ChantingWordsDisplay> {
+  late List<String> _words;
+  int _activeWordIndex = -1; // -1 = no word highlighted
+  Timer? _wordTimer;
+  int _lastCount = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _words = _splitWords(widget.text);
+    _lastCount = widget.currentCount;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChantingWordsDisplay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Re-split if mantra text changed
+    if (oldWidget.text != widget.text) {
+      _words = _splitWords(widget.text);
+      _activeWordIndex = -1;
+      _wordTimer?.cancel();
+    }
+
+    // Count increased → start word cycling animation
+    if (widget.currentCount > _lastCount && widget.currentCount > 0) {
+      _startWordCycle();
+    }
+    _lastCount = widget.currentCount;
+  }
+
+  @override
+  void dispose() {
+    _wordTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Split text into words (handles newlines and hyphens).
+  List<String> _splitWords(String text) {
+    return text
+        .replaceAll('\n', ' ')
+        .replaceAll('-', '')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+  }
+
+  /// Animate through words one by one, then reset.
+  void _startWordCycle() {
+    _wordTimer?.cancel();
+    if (_words.isEmpty) return;
+
+    // Time per word: spread estimated chant duration across all words
+    final msPerWord = (widget.estimatedChantMs / _words.length)
+        .round()
+        .clamp(120, 800);
+
+    _activeWordIndex = 0;
+    setState(() {});
+
+    _wordTimer = Timer.periodic(Duration(milliseconds: msPerWord), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _activeWordIndex++;
+        if (_activeWordIndex >= _words.length) {
+          _activeWordIndex = -1;
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 6,
+        runSpacing: 4,
+        children: List.generate(_words.length, (i) {
+          final isActive = i == _activeWordIndex;
+          final isPast = _activeWordIndex >= 0 && i < _activeWordIndex;
+
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? widget.accentColor.withAlpha(50)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              style: theme.textTheme.titleLarge!.copyWith(
+                color: isActive
+                    ? widget.accentColor
+                    : isPast
+                        ? theme.colorScheme.onSurface.withAlpha(100)
+                        : theme.colorScheme.onSurface.withAlpha(180),
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                fontSize: isActive ? 22 : 20,
+              ),
+              child: Text(_words[i]),
+            ),
+          );
+        }),
+      ),
     );
   }
 }

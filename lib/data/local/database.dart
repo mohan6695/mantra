@@ -89,7 +89,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -97,41 +97,132 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
           await insertDefaultMantras();
         },
+        onUpgrade: (Migrator m, int from, int to) async {
+          if (from < 2) {
+            // v2: Replace default mantras with top 10 Hindu mantras.
+            // Existing user sessions are preserved — we only update the
+            // mantra config names/text and add new entries.
+            await _migrateToV2Mantras();
+          }
+        },
       );
 
   // ──────────────────────────────────────────
   // Seed data
   // ──────────────────────────────────────────
 
+  /// v2 migration: update existing mantras to top 10 curated set.
+  Future<void> _migrateToV2Mantras() async {
+    // Update existing mantra #1 (Om Namah Shivaya) → stays, re-order
+    await (update(mantraConfigTable)..where((t) => t.id.equals(1))).write(
+      const MantraConfigTableCompanion(
+        name: Value('Om (Pranava)'),
+        devanagari: Value('ॐ'),
+        romanized: Value('Om'),
+        sensitivity: Value(0.85),
+        refractoryMs: Value(600),
+        sortOrder: Value(1),
+      ),
+    );
+
+    // Update existing mantra #2 (Om Mani Padme Hum) → Om Namah Shivaya
+    await (update(mantraConfigTable)..where((t) => t.id.equals(2))).write(
+      const MantraConfigTableCompanion(
+        name: Value('Om Namah Shivaya'),
+        devanagari: Value('ॐ नमः शिवाय'),
+        romanized: Value('Om Na-mah Shi-vaa-ya'),
+        sensitivity: Value(0.82),
+        refractoryMs: Value(800),
+        sortOrder: Value(2),
+      ),
+    );
+
+    // Update existing mantra #3 (Hare Krishna) → full Mahamantra
+    await (update(mantraConfigTable)..where((t) => t.id.equals(3))).write(
+      MantraConfigTableCompanion(
+        name: const Value('Hare Krishna Mahamantra'),
+        devanagari: const Value(
+          'हरे कृष्ण हरे कृष्ण कृष्ण कृष्ण हरे हरे\nहरे राम हरे राम राम राम हरे हरे',
+        ),
+        romanized: const Value(
+          'Hare Krishna Hare Krishna Krishna Krishna Hare Hare\nHare Rama Hare Rama Rama Rama Hare Hare',
+        ),
+        sensitivity: const Value(0.78),
+        refractoryMs: const Value(1500),
+        sortOrder: const Value(3),
+      ),
+    );
+
+    // Update existing mantra #4 (Om Shanti) → Om Namo Narayanaya
+    await (update(mantraConfigTable)..where((t) => t.id.equals(4))).write(
+      const MantraConfigTableCompanion(
+        name: Value('Om Namo Narayanaya'),
+        devanagari: Value('ॐ नमो नारायणाय'),
+        romanized: Value('Om Na-mo Naa-raa-ya-naa-ya'),
+        sensitivity: Value(0.80),
+        refractoryMs: Value(900),
+        sortOrder: Value(4),
+      ),
+    );
+
+    // Deactivate old mantra #5 (Om Gam Ganapataye) — preserve history
+    await (update(mantraConfigTable)..where((t) => t.id.equals(5))).write(
+      const MantraConfigTableCompanion(
+        isActive: Value(false),
+        sortOrder: Value(99),
+      ),
+    );
+  }
+
   Future<void> insertDefaultMantras() async {
     await batch((batch) {
       batch.insertAll(
         mantraConfigTable,
         [
+          // ── 1. Om (Pranava) — shortest, ~1.5s per chant ──
+          MantraConfigTableCompanion.insert(
+            name: 'Om (Pranava)',
+            devanagari: 'ॐ',
+            romanized: 'Om',
+            targetCount: const Value(108),
+            sensitivity: const Value(0.85),
+            refractoryMs: const Value(600),
+            sortOrder: const Value(1),
+          ),
+
+          // ── 2. Om Namah Shivaya — ~2.5s per chant ──
           MantraConfigTableCompanion.insert(
             name: 'Om Namah Shivaya',
             devanagari: 'ॐ नमः शिवाय',
             romanized: 'Om Na-mah Shi-vaa-ya',
+            targetCount: const Value(108),
+            sensitivity: const Value(0.82),
+            refractoryMs: const Value(800),
+            sortOrder: const Value(2),
           ),
+
+          // ── 3. Hare Krishna Mahamantra — ~6s per chant (16 words) ──
           MantraConfigTableCompanion.insert(
-            name: 'Om Mani Padme Hum',
-            devanagari: 'ॐ मणि पद्मे हूँ',
-            romanized: 'Om Ma-ni Pad-me Hum',
+            name: 'Hare Krishna Mahamantra',
+            devanagari:
+                'हरे कृष्ण हरे कृष्ण कृष्ण कृष्ण हरे हरे\nहरे राम हरे राम राम राम हरे हरे',
+            romanized:
+                'Hare Krishna Hare Krishna Krishna Krishna Hare Hare\nHare Rama Hare Rama Rama Rama Hare Hare',
+            targetCount: const Value(108),
+            sensitivity: const Value(0.78),
+            refractoryMs: const Value(1500),
+            sortOrder: const Value(3),
           ),
+
+          // ── 4. Om Namo Narayanaya — ~3s per chant ──
           MantraConfigTableCompanion.insert(
-            name: 'Hare Krishna',
-            devanagari: 'हरे कृष्ण',
-            romanized: 'Ha-re Krish-na',
-          ),
-          MantraConfigTableCompanion.insert(
-            name: 'Om Shanti',
-            devanagari: 'ॐ शान्ति',
-            romanized: 'Om Shan-ti',
-          ),
-          MantraConfigTableCompanion.insert(
-            name: 'Om Gam Ganapataye',
-            devanagari: 'ॐ गं गणपतये नमः',
-            romanized: 'Om Gam Ga-na-pa-ta-ye',
+            name: 'Om Namo Narayanaya',
+            devanagari: 'ॐ नमो नारायणाय',
+            romanized: 'Om Na-mo Naa-raa-ya-naa-ya',
+            targetCount: const Value(108),
+            sensitivity: const Value(0.80),
+            refractoryMs: const Value(900),
+            sortOrder: const Value(4),
           ),
         ],
         mode: InsertMode.insertOrIgnore,
